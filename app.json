@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Fridge",
+    "slug": "fridge-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "pt.personal.fridge",
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "single",
+      "bundler": "metro",
+      "name": "Fridge",
+      "shortName": "Fridge",
+      "themeColor": "#1F7A55",
+      "backgroundColor": "#F7F6F2"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Fridge uses the camera to photograph food and scan barcodes.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Fridge lets you pick food photos from your gallery.",
+          "cameraPermission": "Fridge uses the camera to photograph food."
+        }
+      ]
+    ],
+    "scheme": "fridge",
+    "experiments": {
+      "typedRoutes": false
+    },
+    "platforms": [
+      "android",
+      "web"
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+# Minimal config for `supabase functions deploy`.
+[functions.process-photos]
+# The function checks the caller itself (allowed user JWT, or its own service key when re-invoking).
+verify_jwt = false
