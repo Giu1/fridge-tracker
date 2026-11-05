@@ -1,15 +1,17 @@
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { NutriScore } from '../../components/NutriScore';
 import { Photo } from '../../components/Photo';
 import { StoreDots } from '../../components/StoreChips';
 import { Button, Card, tick } from '../../components/ui';
 import { acceptDetection, bestCandidate, discardJob, kickWorker, rejectDetection, retryJob, useJobs } from '../../lib/jobs';
 import { notify } from '../../lib/dialog';
+import { localSuggestions, searchRemote, rankSuggestions } from '../../lib/products';
+import { useSession } from '../../lib/session';
 import { radius, useTheme } from '../../lib/theme';
-import type { Detection, PhotoJob } from '../../lib/types';
+import type { Detection, PhotoJob, Product } from '../../lib/types';
 
 type Choice = string; // product code, or 'none' = keep the AI's name only
 
@@ -18,6 +20,39 @@ export default function Review() {
   const { jobs, loading } = useJobs();
   const [choice, setChoice] = useState<Record<string, Choice>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const { demo } = useSession();
+  // Your own search per detection: replaces the AI's options (and is the only way in demo mode).
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const [found, setFound] = useState<Record<string, (Product & { match: number })[]>>({});
+  const [searching, setSearching] = useState<string | null>(null);
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const search = (k: string, q: string) => {
+    setTyped((m) => ({ ...m, [k]: q }));
+    clearTimeout(timers.current[k]);
+    if (q.trim().length < 2) {
+      setFound((m) => {
+        const { [k]: _drop, ...rest } = m;
+        return rest;
+      });
+      return;
+    }
+    timers.current[k] = setTimeout(async () => {
+      setSearching(k);
+      const toCandidates = (list: { score: number }[]) =>
+        list.slice(0, 6).map((p) => ({ ...(p as unknown as Product), match: Math.max(0, 1 - p.score) }));
+      setFound((m) => ({ ...m, [k]: [] }));
+      localSuggestions(q, []).then((l) => setFound((m) => ({ ...m, [k]: toCandidates(l) })));
+      try {
+        const remote = await searchRemote(q);
+        setFound((m) => ({ ...m, [k]: toCandidates(rankSuggestions(q, remote, [])) }));
+      } catch {
+        // offline: local results stay
+      } finally {
+        setSearching((cur) => (cur === k ? null : cur));
+      }
+    }, 450);
+  };
   const kicked = useRef(false);
 
   const waiting = jobs.filter((j) => j.status === 'pending' || j.status === 'processing');
@@ -32,7 +67,13 @@ export default function Review() {
   }, [jobs]);
 
   const keyOf = (job: PhotoJob, i: number) => `${job.id}:${i}`;
-  const chosen = (job: PhotoJob, i: number, d: Detection): Choice => choice[keyOf(job, i)] ?? bestCandidate(d)?.code ?? 'none';
+  const optionsFor = (job: PhotoJob, i: number, d: Detection) => found[keyOf(job, i)] ?? d.candidates;
+  const chosen = (job: PhotoJob, i: number, d: Detection): Choice => {
+    const k = keyOf(job, i);
+    if (choice[k]) return choice[k];
+    if (found[k]) return found[k][0]?.code ?? 'none';
+    return bestCandidate(d)?.code ?? 'none';
+  };
 
   const act = async (k: string, fn: () => Promise<void>) => {
     setBusy(k);
@@ -47,8 +88,8 @@ export default function Review() {
 
   const accept = (job: PhotoJob, i: number, d: Detection) => {
     const c = chosen(job, i, d);
-    const product = c === 'none' ? null : d.candidates.find((p) => p.code === c) ?? null;
-    return act(keyOf(job, i), () => acceptDetection(job, i, product));
+    const product = c === 'none' ? null : optionsFor(job, i, d).find((p) => p.code === c) ?? null;
+    return act(keyOf(job, i), () => acceptDetection(job, i, product, typed[keyOf(job, i)]));
   };
 
   const acceptAll = async () => {
@@ -59,7 +100,7 @@ export default function Review() {
         for (const [i, d] of (job.detections ?? []).entries()) {
           if (current.decisions?.[i]) continue;
           const c = chosen(job, i, d);
-          await acceptDetection(current, i, c === 'none' ? null : d.candidates.find((p) => p.code === c) ?? null);
+          await acceptDetection(current, i, c === 'none' ? null : optionsFor(job, i, d).find((p) => p.code === c) ?? null, typed[keyOf(job, i)]);
           current = { ...current, decisions: Object.assign([...(current.decisions ?? [])], { [i]: { status: 'accepted', item_id: '' } }) };
         }
         if (!job.detections?.length) await discardJob(job);
@@ -71,7 +112,7 @@ export default function Review() {
     }
   };
 
-  const undecidedCount = ready.reduce((n, j) => n + (j.detections ?? []).filter((_, i) => !j.decisions?.[i]).length, 0);
+  const undecidedCount = demo ? 0 : ready.reduce((n, j) => n + (j.detections ?? []).filter((_, i) => !j.decisions?.[i]).length, 0);
 
   return (
     <FlatList
@@ -116,6 +157,8 @@ export default function Review() {
                   <Text style={{ color: t.danger, fontWeight: '700' }}>Could not analyse</Text>
                   <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={2}>{job.error}</Text>
                 </>
+              ) : job.detections?.length === 1 && !job.detections[0].name_pt ? (
+                <Text style={{ color: t.text, fontWeight: '700', fontSize: 15 }}>New photo</Text>
               ) : job.detections?.length ? (
                 <Text style={{ color: t.text, fontWeight: '700', fontSize: 15 }}>
                   {job.detections.length === 1 ? '1 food found' : `${job.detections.length} foods found`}
@@ -140,16 +183,34 @@ export default function Review() {
             const k = keyOf(job, i);
             return (
               <View key={k} style={[styles.detection, { borderTopColor: t.border }]}>
-                <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.6 }}>
-                  AI SEES · {Math.round(d.confidence * 100)}% SURE
-                </Text>
-                <Text style={{ color: t.text, fontSize: 18, fontWeight: '800' }}>
-                  {d.name_pt}
-                  {d.brand ? <Text style={{ color: t.muted, fontWeight: '600' }}>  {d.brand}</Text> : null}
-                </Text>
+                {d.name_pt ? (
+                  <>
+                    <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.6 }}>
+                      AI SEES · {Math.round(d.confidence * 100)}% SURE
+                    </Text>
+                    <Text style={{ color: t.text, fontSize: 18, fontWeight: '800' }}>
+                      {d.name_pt}
+                      {d.brand ? <Text style={{ color: t.muted, fontWeight: '600' }}>  {d.brand}</Text> : null}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={{ color: t.text, fontSize: 18, fontWeight: '800' }}>What is this?</Text>
+                )}
+                <View style={[styles.searchBox, { backgroundColor: t.bg, borderColor: t.border }]}>
+                  <Feather name="search" size={16} color={t.muted} />
+                  <TextInput
+                    value={typed[k] ?? ''}
+                    onChangeText={(v) => search(k, v)}
+                    placeholder={d.name_pt ? 'Not right? Search another product' : 'Type it, e.g. leite mimosa'}
+                    placeholderTextColor={t.muted}
+                    style={{ flex: 1, color: t.text, fontSize: 15, paddingVertical: 10 }}
+                    autoCorrect={false}
+                  />
+                  {searching === k && <ActivityIndicator size="small" color={t.accent} />}
+                </View>
 
                 <View style={{ gap: 6, marginTop: 4 }}>
-                  {d.candidates.map((p) => {
+                  {optionsFor(job, i, d).map((p) => {
                     const on = sel === p.code;
                     return (
                       <Pressable
@@ -186,8 +247,8 @@ export default function Review() {
                       <Feather name="tag" size={18} color={t.muted} />
                     </View>
                     <Text style={{ color: t.text, flex: 1 }}>
-                      {d.candidates.length ? 'None of these, just ' : 'Save as '}
-                      <Text style={{ fontWeight: '700' }}>{d.name_pt}</Text>
+                      {optionsFor(job, i, d).length ? 'None of these, just ' : 'Save as '}
+                      <Text style={{ fontWeight: '700' }}>{typed[k]?.trim() || d.name_pt || 'Food'}</Text>
                     </Text>
                     <Feather name={sel === 'none' ? 'check-circle' : 'circle'} size={20} color={sel === 'none' ? t.accent : t.border} />
                   </Pressable>
@@ -225,5 +286,6 @@ const styles = StyleSheet.create({
   iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   detection: { borderTopWidth: StyleSheet.hairlineWidth, padding: 14, gap: 4 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: radius.md, borderWidth: 1.5 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 12, marginTop: 6 },
   optImg: { width: 44, height: 44, borderRadius: 10, backgroundColor: '#fff' },
 });

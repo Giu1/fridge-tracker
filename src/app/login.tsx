@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
 import { Button, Field, Page } from '../components/ui';
+import { useSession } from '../lib/session';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../lib/theme';
 
 export default function Login() {
   const t = useTheme();
+  const { enterDemo } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,6 +34,7 @@ export default function Login() {
         <Field placeholder="Password" secureTextEntry autoComplete="current-password" value={password} onChangeText={setPassword} onSubmitEditing={submit} />
         {error && <Text style={{ color: t.danger, fontWeight: '600' }}>{error}</Text>}
         <Button title="Sign in" onPress={submit} busy={busy} disabled={!email || !password} />
+        <Button title="Try it without an account" kind="ghost" onPress={enterDemo} />
       </Page>
     </KeyboardAvoidingView>
   );

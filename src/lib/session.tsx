@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { isConfigured, supabase } from './supabase';
+import { initMode, isDemo, setDemo } from './mode';
+import { supabase } from './supabase';
 
 type Aal = 'aal1' | 'aal2' | null;
 
@@ -11,13 +12,19 @@ interface Ctx {
   needsMfa: boolean;
   refreshMfa: () => Promise<void>;
   signOut: () => Promise<void>;
+  /** demo mode: everything stays in this browser, no account */
+  demo: boolean;
+  enterDemo: () => Promise<void>;
 }
+
+const DEMO_SESSION = { user: { id: 'demo', email: 'demo (this browser only)' } } as unknown as Session;
 
 const SessionContext = createContext<Ctx | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [demo, setDemoState] = useState(isDemo());
   const [aal, setAal] = useState<{ current: Aal; next: Aal }>({ current: null, next: null });
 
   const refreshMfa = useCallback(async () => {
@@ -26,12 +33,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!isConfigured) {
-      setReady(true);
-      return;
-    }
     let mounted = true;
     (async () => {
+      if (await initMode()) {
+        setDemoState(true);
+        setReady(true);
+        return;
+      }
       const { data } = await supabase.auth.getSession();
       if (!mounted) return;
       setSession(data.session);
@@ -49,13 +57,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [refreshMfa]);
 
   const signOut = async () => {
+    if (demo) {
+      await setDemo(false);
+      setDemoState(isDemo());
+      return;
+    }
     await supabase.auth.signOut();
   };
 
-  const needsMfa = !!session && aal.next === 'aal2' && aal.current !== 'aal2';
+  const enterDemo = async () => {
+    await setDemo(true);
+    setDemoState(true);
+  };
+
+  const needsMfa = !demo && !!session && aal.next === 'aal2' && aal.current !== 'aal2';
 
   return (
-    <SessionContext.Provider value={{ ready, session, needsMfa, refreshMfa, signOut }}>{children}</SessionContext.Provider>
+    <SessionContext.Provider
+      value={{ ready, session: demo ? DEMO_SESSION : session, needsMfa, refreshMfa, signOut, demo, enterDemo }}
+    >
+      {children}
+    </SessionContext.Provider>
   );
 }
 

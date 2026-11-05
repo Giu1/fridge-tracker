@@ -9,6 +9,7 @@ import { Photo } from '../../components/Photo';
 import { StoreDots, StoreFilter } from '../../components/StoreChips';
 import { Segmented, Tap, tick } from '../../components/ui';
 import { expiryLabel } from '../../lib/expiry';
+import { useSession } from '../../lib/session';
 import { daysUntil, useItems } from '../../lib/items';
 import { storesFromLabels } from '../../lib/stores';
 import { radius, useTheme } from '../../lib/theme';
@@ -28,6 +29,7 @@ export default function Inventory() {
   const insets = useSafeAreaInsets();
   const columns = width >= 1000 ? 4 : width >= 700 ? 3 : 2;
   const { items, loading, offline, reload } = useItems();
+  const { demo } = useSession();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('recent');
@@ -72,6 +74,7 @@ export default function Inventory() {
                 <Text style={{ color: t.muted, fontSize: 15 }}>
                   {items.length} item{items.length === 1 ? '' : 's'}
                   {offline ? ' · offline copy' : ''}
+                  {demo ? ' · demo, saved in this browser' : ''}
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 10 }}>

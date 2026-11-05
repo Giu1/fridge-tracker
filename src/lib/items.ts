@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { prepareImage, readBytes } from './files';
+import { demoItems, demoPhotoUrls, newId, putDemoPhoto, removeDemoPhoto, saveDemoItems, subscribeDemo } from './demo';
 import { cacheItems, cachedItems, markProductUsed } from './localdb';
+import { isDemo } from './mode';
 import { PHOTO_BUCKET, supabase } from './supabase';
 import type { Item, ItemDraft } from './types';
 
@@ -8,6 +10,7 @@ const randomId = () => `${Date.now().toString(36)}-${Math.random().toString(36).
 
 /** Resize + upload a local photo to the private bucket; returns its storage path. */
 export async function uploadPhoto(localUri: string, folder: 'items' | 'inbox' = 'items') {
+  if (isDemo()) return putDemoPhoto(localUri);
   const small = await prepareImage(localUri).catch(() => localUri);
   const bytes = await readBytes(small);
   const path = `${folder}/${randomId()}.jpg`;
@@ -21,6 +24,7 @@ const urlCache = new Map<string, { url: string; exp: number }>();
 const TTL = 60 * 60;
 
 export async function photoUrls(paths: string[]) {
+  if (isDemo()) return demoPhotoUrls(paths);
   const now = Date.now() / 1000;
   const missing = [...new Set(paths)].filter((p) => (urlCache.get(p)?.exp ?? 0) < now + 300);
   if (missing.length) {
@@ -38,11 +42,16 @@ export async function photoUrls(paths: string[]) {
 /** Delete a photo only when no item still points at it (one photo can hold several foods). */
 export async function removePhotoIfUnused(path: string | null) {
   if (!path) return;
+  if (isDemo()) {
+    if (!(await demoItems()).some((i) => i.photo_path === path)) await removeDemoPhoto(path);
+    return;
+  }
   const { count } = await supabase.from('items').select('id', { count: 'exact', head: true }).eq('photo_path', path);
   if (!count) await supabase.storage.from(PHOTO_BUCKET).remove([path]);
 }
 
 export async function fetchItems() {
+  if (isDemo()) return (await demoItems()).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const { data, error } = await supabase.from('items').select('*').order('created_at', { ascending: false });
   if (error) throw error;
   return data as Item[];
@@ -50,6 +59,13 @@ export async function fetchItems() {
 
 export async function addItem(draft: ItemDraft, localPhotoUri?: string | null) {
   const photo_path = localPhotoUri ? await uploadPhoto(localPhotoUri) : draft.photo_path;
+  if (isDemo()) {
+    const now = new Date().toISOString();
+    const item: Item = { ...draft, photo_path, id: newId(), added_by: 'demo', created_at: now, updated_at: now };
+    await saveDemoItems([item, ...(await demoItems())]);
+    if (draft.barcode) markProductUsed(draft.barcode).catch(() => {});
+    return item;
+  }
   const { data, error } = await supabase.from('items').insert({ ...draft, photo_path }).select().single();
   if (error) throw error;
   if (draft.barcode) markProductUsed(draft.barcode).catch(() => {});
@@ -59,6 +75,12 @@ export async function addItem(draft: ItemDraft, localPhotoUri?: string | null) {
 export async function updateItem(item: Item, patch: Partial<ItemDraft>, localPhotoUri?: string | null) {
   let photo_path = patch.photo_path ?? item.photo_path;
   if (localPhotoUri) photo_path = await uploadPhoto(localPhotoUri);
+  if (isDemo()) {
+    const updated: Item = { ...item, ...patch, photo_path, updated_at: new Date().toISOString() };
+    await saveDemoItems((await demoItems()).map((i) => (i.id === item.id ? updated : i)));
+    if (localPhotoUri) await removePhotoIfUnused(item.photo_path);
+    return updated;
+  }
   const { data, error } = await supabase.from('items').update({ ...patch, photo_path }).eq('id', item.id).select().single();
   if (error) throw error;
   if (localPhotoUri) await removePhotoIfUnused(item.photo_path);
@@ -67,6 +89,11 @@ export async function updateItem(item: Item, patch: Partial<ItemDraft>, localPho
 }
 
 export async function deleteItem(item: Item) {
+  if (isDemo()) {
+    await saveDemoItems((await demoItems()).filter((i) => i.id !== item.id));
+    await removePhotoIfUnused(item.photo_path);
+    return;
+  }
   const { error } = await supabase.from('items').delete().eq('id', item.id);
   if (error) throw error;
   await removePhotoIfUnused(item.photo_path);
@@ -100,6 +127,13 @@ export function useItems() {
       }
     });
     reload();
+    if (isDemo()) {
+      const off = subscribeDemo(reload);
+      return () => {
+        active = false;
+        off();
+      };
+    }
     const channel = supabase
       .channel(`items-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, () => reload())

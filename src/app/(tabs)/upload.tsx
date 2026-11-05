@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, Page, Tap } from '../../components/ui';
 import { kickWorker, queuePhoto } from '../../lib/jobs';
+import { useSession } from '../../lib/session';
 import { notify } from '../../lib/dialog';
 import { radius, useTheme } from '../../lib/theme';
 
@@ -14,6 +15,7 @@ const PARALLEL = 3;
 
 export default function UploadPhotos() {
   const t = useTheme();
+  const { demo } = useSession();
   const [uploads, setUploads] = useState<Upload[]>([]);
   const running = useRef(false);
 
@@ -68,8 +70,9 @@ export default function UploadPhotos() {
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
       <Page style={{ gap: 16 }}>
         <Text style={{ color: t.muted, fontSize: 15, lineHeight: 21 }}>
-          Snap or pick as many photos as you like. They upload now and the AI sorts them out in the background,
-          matching each food to real supermarket products. You approve them in Review.
+          {demo
+            ? 'Demo mode: photos are kept in this browser and go straight to Review, where you type what each one is and pick the supermarket product.'
+            : 'Snap or pick as many photos as you like. They upload now and the AI sorts them out in the background, matching each food to real supermarket products. You approve them in Review.'}
         </Text>
 
         <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -87,7 +90,7 @@ export default function UploadPhotos() {
           <Card style={{ gap: 12 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: t.text, fontWeight: '700', fontSize: 16 }}>
-                {busy ? `Uploading ${done}/${uploads.length}…` : `${done} photo${done === 1 ? '' : 's'} sent to the AI`}
+                {busy ? `Uploading ${done}/${uploads.length}…` : `${done} photo${done === 1 ? '' : 's'} ready to review`}
               </Text>
               {failed > 0 && <Text style={{ color: t.danger, fontWeight: '600' }}>{failed} failed</Text>}
             </View>

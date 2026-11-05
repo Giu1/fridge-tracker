@@ -31,40 +31,44 @@ Both see the same fridge, live.
 
 ### 2. AI worker (Supabase Edge Function)
 1. Get an API key at <https://console.anthropic.com> and add a few euros of credit (1,000 photos ≈ €0.30).
-2. Deploy, using either option:
-   - **From your computer:** `npx supabase login`, then
+2. Deploy it.
+   From your computer: `npx supabase login`, then
      `npx supabase functions deploy process-photos --project-ref <ref> --no-verify-jwt` and
      `npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref <ref>`
-   - **From GitHub:** add the repo secrets `SUPABASE_ACCESS_TOKEN` (from supabase.com/dashboard/account/tokens) and
-     `SUPABASE_PROJECT_REF`, then run the *Deploy AI worker* action. Still set `ANTHROPIC_API_KEY` in Supabase
-     (**Edge Functions → Secrets**).
 
    `--no-verify-jwt` is intended: the function checks the caller itself and only accepts the two allowed accounts.
 
-### 3. GitHub secrets and Pages
-In the repo, under **Settings → Secrets and variables → Actions**, add:
+### 3. Website (GitHub Pages)
+GitHub Actions only builds the website. Every push to `main` publishes it at `https://<user>.github.io/<repo>/`
+(**Settings → Pages → Source: GitHub Actions**).
+
+- **Without secrets the site runs in demo mode.** There's no login and no Supabase: items and photos are saved in that
+  browser only, and you name photos yourself in Review (no AI). This is handy for trying it out.
+- **For the real shared version**, add these under **Settings → Secrets and variables → Actions** and re-run the
+  *Web app* action:
 
 | Secret | Value |
 |---|---|
 | `EXPO_PUBLIC_SUPABASE_URL` | Project URL |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | anon public key (meant to be public: the database rules do the protecting) |
 
-Then go to **Settings → Pages → Source: GitHub Actions**. Every push to `main` publishes the web app at
-`https://<user>.github.io/<repo>/`.
+  The sign-in screen still has a "Try it without an account" button for demo mode.
 
-### 4. Android APK
-Open **Actions → Android APK → Run workflow**, or push a tag like `v1.0.0` to also get a GitHub Release. Download
-`fridge.apk` and open it on the phone (allow "install unknown apps").
-
-To install updates over the old app without uninstalling, sign every build with the same key. Do this once:
+### 4. Android APK (built on your computer)
+You need Node 22, JDK 17 and the Android SDK (installing Android Studio gives you both of the last two).
 ```bash
-keytool -genkeypair -v -keystore release.jks -alias fridge -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 release.jks   # paste into secret ANDROID_KEYSTORE_BASE64; password into ANDROID_KEYSTORE_PASSWORD
+cp .env.example .env        # fill in the Supabase URL + anon key (leave empty for a demo-only APK)
+npm install
+npm run android:apk         # Windows: npm run android:apk:win
 ```
+The APK ends up in `android/app/build/outputs/apk/release/app-release.apk`. Copy it to the phone and open it (allow
+"install unknown apps"). Or, with the phone plugged in over USB: `npx expo run:android --variant release`.
+
+The default build is signed with a debug key, which is fine for personal use. Keep the same machine/`android` folder so
+updates install over the old version.
 
 ### Running locally
 ```bash
-cp .env.example .env   # fill in URL + anon key
 npm install
 npx expo start         # press w for web, or scan the QR with Expo Go on Android
 ```
@@ -86,7 +90,7 @@ src/app/              add / edit item, item details, settings (2FA), login, Bimb
 src/lib/              Supabase client, items + jobs, local DB (.ts native / .web.ts browser), product search, stores
 supabase/schema.sql   tables, allow-list, RLS, storage, realtime, job queue
 supabase/functions/   process-photos AI worker (Deno)
-.github/workflows/    web → GitHub Pages, Android APK, edge function deploy
+.github/workflows/    web.yml → GitHub Pages (website only)
 ```
 
 Product data: © Open Food Facts contributors, ODbL. Supermarket logos are loaded from each chain's own website icon and

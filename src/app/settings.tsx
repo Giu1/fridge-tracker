@@ -3,14 +3,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { Platform, ScrollView, Text, View } from 'react-native';
 import { confirmAsk, notify } from '../lib/dialog';
 import { Button, Card, Field, Label, Page } from '../components/ui';
+import { resetDemo } from '../lib/demo';
 import { productCount } from '../lib/localdb';
+import { canLeaveDemo } from '../lib/mode';
 import { useSession } from '../lib/session';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../lib/theme';
 
 export default function Settings() {
   const t = useTheme();
-  const { session, signOut, refreshMfa } = useSession();
+  const { session, signOut, refreshMfa, demo } = useSession();
   const [count, setCount] = useState<number | null>(null);
   const [factorId, setFactorId] = useState<string | null>(null);
   const [enrol, setEnrol] = useState<{ id: string; qr: string; secret: string } | null>(null);
@@ -24,8 +26,8 @@ export default function Settings() {
 
   useEffect(() => {
     productCount().then(setCount);
-    loadFactors();
-  }, [loadFactors]);
+    if (!demo) loadFactors();
+  }, [loadFactors, demo]);
 
   const startEnrol = async () => {
     setBusy(true);
@@ -66,7 +68,23 @@ export default function Settings() {
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '600', marginTop: 4 }}>{session?.user.email}</Text>
         </Card>
 
-        <Card style={{ gap: 12 }}>
+        {demo && (
+          <Card style={{ gap: 10 }}>
+            <Label>Demo mode</Label>
+            <Text style={{ color: t.text }}>
+              Everything is saved only in this browser. There's no login, no sharing between devices and no AI: you name photos yourself in Review.
+            </Text>
+            <Button
+              title="Delete all demo data"
+              kind="danger"
+              onPress={async () => {
+                if (await confirmAsk('Delete all demo data?', 'Items, photos and pending reviews in this browser.', 'Delete')) await resetDemo();
+              }}
+            />
+          </Card>
+        )}
+
+        {!demo && <Card style={{ gap: 12 }}>
           <Label>Two-step sign-in</Label>
           {factorId ? (
             <>
@@ -89,7 +107,7 @@ export default function Settings() {
               <Button title="Turn on" onPress={startEnrol} busy={busy} />
             </>
           )}
-        </Card>
+        </Card>}
 
         <Card style={{ gap: 6 }}>
           <Label>This device</Label>
@@ -99,7 +117,7 @@ export default function Settings() {
           </Text>
         </Card>
 
-        <Button title="Sign out" kind="secondary" onPress={signOut} />
+        {(!demo || canLeaveDemo()) && <Button title={demo ? 'Leave demo, go to sign in' : 'Sign out'} kind="secondary" onPress={signOut} />}
       </Page>
     </ScrollView>
   );

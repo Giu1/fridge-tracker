@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { demoJobs, newId, saveDemoJobs, subscribeDemo } from './demo';
 import { addItem, isoInDays, removePhotoIfUnused, uploadPhoto } from './items';
+import { isDemo } from './mode';
 import { storeLabels } from './stores';
 import { supabase } from './supabase';
 import type { Decision, Detection, PhotoJob, Product } from './types';
@@ -7,26 +9,37 @@ import type { Decision, Detection, PhotoJob, Product } from './types';
 /** Upload one photo into the AI inbox. */
 export async function queuePhoto(localUri: string) {
   const photo_path = await uploadPhoto(localUri, 'inbox');
+  if (isDemo()) {
+    // No AI in demo mode: the photo goes straight to Review, where you type what it is.
+    const job: PhotoJob = {
+      id: newId(), photo_path, status: 'ready', decisions: [], error: null, cost_usd: 0, created_at: new Date().toISOString(),
+      detections: [{ name_pt: '', brand: null, quantity: null, location: 'fridge', shelf_life_days: null, confidence: 0, candidates: [] }],
+    };
+    await saveDemoJobs([...(await demoJobs()), job]);
+    return;
+  }
   const { error } = await supabase.from('photo_jobs').insert({ photo_path });
   if (error) throw error;
 }
 
 /** Wake the background worker (it returns immediately and keeps processing on the server). */
 export async function kickWorker() {
+  if (isDemo()) return;
   const { error } = await supabase.functions.invoke('process-photos', { body: {} });
   if (error) throw error;
 }
 
 export async function retryJob(job: PhotoJob) {
+  if (isDemo()) return;
   await supabase.from('photo_jobs').update({ status: 'pending', error: null, attempts: 0 }).eq('id', job.id);
   await kickWorker();
 }
 
 /** Turn a detection (+ the chosen supermarket product, or none) into a fridge item. */
-export async function acceptDetection(job: PhotoJob, index: number, product: Product | null) {
+export async function acceptDetection(job: PhotoJob, index: number, product: Product | null, typedName?: string) {
   const d = job.detections![index];
   const item = await addItem({
-    name: product ? product.name : d.name_pt,
+    name: product ? product.name : typedName?.trim() || d.name_pt || 'Food',
     quantity: product?.quantity ?? d.quantity,
     location: d.location,
     expires_on: d.shelf_life_days != null ? isoInDays(d.shelf_life_days) : null,
@@ -49,6 +62,11 @@ export async function rejectDetection(job: PhotoJob, index: number) {
 }
 
 export async function discardJob(job: PhotoJob) {
+  if (isDemo()) {
+    await saveDemoJobs((await demoJobs()).filter((j) => j.id !== job.id));
+    await removePhotoIfUnused(job.photo_path);
+    return;
+  }
   await supabase.from('photo_jobs').delete().eq('id', job.id);
   await removePhotoIfUnused(job.photo_path);
 }
@@ -61,6 +79,8 @@ async function decide(job: PhotoJob, index: number, decision: Decision) {
   if (done) {
     // Everything decided: the job leaves the inbox; the photo stays only if an item uses it.
     await discardJob(job);
+  } else if (isDemo()) {
+    await saveDemoJobs((await demoJobs()).map((j) => (j.id === job.id ? { ...j, decisions } : j)));
   } else {
     const { error } = await supabase.from('photo_jobs').update({ decisions }).eq('id', job.id);
     if (error) throw error;
@@ -78,6 +98,11 @@ export function useJobs() {
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
+    if (isDemo()) {
+      setJobs(await demoJobs());
+      setLoading(false);
+      return;
+    }
     const { data } = await supabase.from('photo_jobs').select('*').order('created_at', { ascending: true });
     if (data) setJobs(data as PhotoJob[]);
     setLoading(false);
@@ -85,6 +110,7 @@ export function useJobs() {
 
   useEffect(() => {
     reload();
+    if (isDemo()) return subscribeDemo(reload);
     const channel = supabase
       .channel(`jobs-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'photo_jobs' }, () => reload())

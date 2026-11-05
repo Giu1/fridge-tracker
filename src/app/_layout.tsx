@@ -1,8 +1,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { SessionProvider, useSession } from '../lib/session';
-import { isConfigured } from '../lib/supabase';
 import { useTheme } from '../lib/theme';
 
 export default function RootLayout() {
@@ -18,16 +17,6 @@ function Gate() {
   const t = useTheme();
   const { ready, session, needsMfa } = useSession();
 
-  if (!isConfigured) {
-    return (
-      <View style={{ flex: 1, backgroundColor: t.bg, justifyContent: 'center', padding: 24, gap: 12 }}>
-        <Text style={{ color: t.text, fontSize: 22, fontWeight: '800' }}>Almost there</Text>
-        <Text style={{ color: t.muted, fontSize: 16 }}>
-          Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to a .env file (see README), then restart.
-        </Text>
-      </View>
-    );
-  }
   if (!ready) {
     return (
       <View style={{ flex: 1, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center' }}>
