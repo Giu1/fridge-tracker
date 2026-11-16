@@ -4,7 +4,6 @@
     "strict": true
   },
   "exclude": [
-    "supabase/functions",
     "node_modules"
   ]
 }

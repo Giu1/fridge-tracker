@@ -2,7 +2,7 @@ import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 
-/** Shrink a photo to max 1280 px JPEG: faster uploads, and the AI needs no more than that. */
+/** Shrink a photo to max 1280 px JPEG: faster uploads and less storage. */
 export async function prepareImage(uri: string) {
   const ref = await ImageManipulator.manipulate(uri, { maxWidth: 1600, maxHeight: 1600 }).resize({ width: 1280 }).renderAsync();
   const out = await ref.saveAsync({ compress: 0.72, format: SaveFormat.JPEG });

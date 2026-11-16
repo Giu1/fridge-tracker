@@ -114,13 +114,13 @@ begin new.updated_at = now(); return new; end $$;
 drop trigger if exists items_touch on public.items;
 create trigger items_touch before update on public.items for each row execute function public.touch_updated_at();
 
--- 3. AI photo jobs (batch uploads waiting for review) -------------------------------
+-- 3. Photo inbox: uploaded photos waiting for you to say what they are (no AI) ----------
 create table if not exists public.photo_jobs (
   id          uuid primary key default gen_random_uuid(),
   photo_path  text not null,
-  status      text not null default 'pending' check (status in ('pending','processing','ready','failed')),
+  status      text not null default 'ready' check (status in ('pending','processing','ready','failed')),
   attempts    smallint not null default 0,
-  detections  jsonb,           -- [{ guess..., candidates: [product...] }]
+  detections  jsonb,           -- one entry per food in the photo, named by you in Review
   decisions   jsonb not null default '[]'::jsonb,  -- per detection: {"status":"accepted","item_id":...} | {"status":"rejected"}
   error       text,
   cost_usd    numeric,
@@ -132,28 +132,11 @@ create index if not exists photo_jobs_status_idx on public.photo_jobs (status, c
 drop trigger if exists photo_jobs_touch on public.photo_jobs;
 create trigger photo_jobs_touch before update on public.photo_jobs for each row execute function public.touch_updated_at();
 
--- Worker queue: hand out the next pending job exactly once (also retries jobs stuck > 5 min).
-create or replace function public.claim_photo_job() returns public.photo_jobs
-language plpgsql security definer set search_path = public as $$
-declare j photo_jobs;
-begin
-  update photo_jobs set status = 'pending'
-   where status = 'processing' and updated_at < now() - interval '5 minutes' and attempts < 3;
-  update photo_jobs set status = 'failed', error = coalesce(error, 'gave up after 3 attempts')
-   where status = 'processing' and updated_at < now() - interval '5 minutes' and attempts >= 3;
-  select * into j from photo_jobs where status = 'pending' order by created_at limit 1 for update skip locked;
-  if not found then return null; end if;
-  update photo_jobs set status = 'processing', attempts = attempts + 1 where id = j.id returning * into j;
-  return j;
-end $$;
-revoke all on function public.claim_photo_job() from public, anon, authenticated;  -- service role only
-
--- Shared cache of supermarket product searches (keeps Open Food Facts calls low).
-create table if not exists public.product_cache (
-  query      text primary key,
-  results    jsonb not null,
-  fetched_at timestamptz not null default now()
-);
+-- Upgrade from the AI version: no worker any more, so everything waiting goes straight to Review.
+alter table public.photo_jobs alter column status set default 'ready';
+update public.photo_jobs set status = 'ready' where status <> 'ready';
+drop function if exists public.claim_photo_job();
+drop table if exists public.product_cache;
 
 -- 3b. Saved Cookidoo (Bimby) recipes, ingredients linked to stored items -------------------
 create table if not exists public.recipes (
@@ -178,7 +161,6 @@ alter table public.locations     enable row level security;
 alter table public.recipes       enable row level security;
 alter table public.items         enable row level security;
 alter table public.photo_jobs    enable row level security;
-alter table public.product_cache enable row level security;
 
 drop policy if exists "allowed users manage items" on public.items;
 create policy "allowed users manage items" on public.items
@@ -195,10 +177,6 @@ create policy "allowed users manage places" on public.locations
 drop policy if exists "allowed users manage recipes" on public.recipes;
 create policy "allowed users manage recipes" on public.recipes
   for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
-
-drop policy if exists "allowed users read cache" on public.product_cache;
-create policy "allowed users read cache" on public.product_cache
-  for select to authenticated using (public.is_allowed());
 
 -- 5. Live sync between the phone and the browser ---------------------------------
 alter table public.items replica identity full;

@@ -70,7 +70,7 @@ export interface Product {
   categories?: string | null;
 }
 
-/** One food the AI found in a photo, with the supermarket products it might be. */
+/** One food in an uploaded photo, waiting for you to say what it is (no AI: you name it in Review). */
 export interface Detection {
   name_pt: string;
   brand: string | null;

@@ -5,13 +5,14 @@ for the other. Both see the same food, places and recipes, live.
 
 - **Places.** Fridge, Freezer and Emergency supplies come ready. Add your own (wine rack, garage shelf…), rename,
   reorder or remove them in the app (Settings → Places, or **+ Place** on the Food tab). Changes appear on both devices.
-- **Photos in batch, sorted by AI.** Snap or pick dozens of photos at once. They upload straight away and a background
-  worker recognises each food with Claude Haiku 5.5 (about €0.0003 per photo). It also links each food to real products
-  sold in Portuguese supermarkets. In **Review** you add it as a new item (picking the place), **match the photo to an
-  item you already created** (the app suggests look-alikes, or pick any item), or refuse it.
+- **Photos in batch, no AI.** Snap or pick dozens of photos at once; they upload straight away to a **Review** inbox.
+  There you say what each photo is: type a name (fuzzy search of real products sold in Portuguese supermarkets) or
+  scan the barcode, then add it as a new item in the place you pick, or **match the photo to an item you already
+  created** (the app suggests items with a similar name, or pick any item). One photo can hold several foods.
+  Nothing is sent to any AI service.
 - **Supermarket products with Nutri-Score.** Matches come from Open Food Facts (Portugal), with Nutri-Score, NOVA group,
   kcal and barcode. The real logos of Continente, Pingo Doce, Lidl, Auchan, Intermarché, Mercadona, Minipreço and Aldi
-  appear on products, filters and AI options.
+  appear on products, filters and search results.
 - **Fuzzy search while typing.** When you add an item by hand, typing `iogurt grgo` still finds "Iogurte Grego". Products
   from the supermarkets you pick are listed first, and you can also scan a barcode.
 - **Opens instantly.** Each device keeps a copy of the food, places, recipes and photo links (SQLite on Android, browser
@@ -25,7 +26,7 @@ for the other. Both see the same food, places and recipes, live.
   Cookidoo has no public API, so the app only stores and opens links; it never signs in to Cookidoo.
 - **Security.** Only two allow-listed e-mails can exist (the database refuses a third): sign-ups are blocked in the database. Every table and photo is
   behind row-level security, photos sit in a private bucket with 1-hour links, two-step sign-in (authenticator app) is
-  available in Settings, and the AI key lives only on the server.
+  available in Settings. The app only ever holds the **publishable** key; the secret key is never needed.
 
 ## Setup (about 20 minutes, once)
 
@@ -40,37 +41,38 @@ for the other. Both see the same food, places and recipes, live.
 5. Optional hardening under **Authentication**: set a minimum password length of 12+ under *Policies/Passwords*, and
    check that *Database → Publications → supabase_realtime* lists `items`, `photo_jobs`, `locations` and `recipes`
    (the script adds them).
-6. Note the following from **Project Settings → API**: the *Project URL*, the *anon public* key and the *Project ref*.
+6. Note two values:
+   - the **Project URL** (`https://<ref>.supabase.co`, under *Project Settings → Data API*, or the *Connect* button), and
+   - the **publishable key** `sb_publishable_…` (*Project Settings → API Keys*).
 
-### 2. AI worker (Supabase Edge Function)
-1. Get an API key at <https://console.anthropic.com> and add a few euros of credit (1,000 photos ≈ €0.30).
-2. Deploy it.
-   From your computer: `npx supabase login`, then
-     `npx supabase functions deploy process-photos --project-ref <ref> --no-verify-jwt` and
-     `npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref <ref>`
+   **Never use the secret key (`sb_secret_…`) or the legacy `service_role` key in the app or in GitHub secrets.**
+   Anything built into the APK or the website can be read by anyone, and the secret key bypasses every database rule.
+   The app refuses to start with a secret key. Nothing in this setup needs it. (The legacy *anon* key also works in the
+   same place, but Supabase retires legacy keys in early 2027.)
+7. **Upgrading from the AI version?** Run the schema again (it removes the AI job queue and puts waiting photos into
+   Review), then delete the old function in *Edge Functions → process-photos* and its `ANTHROPIC_API_KEY` secret in
+   *Edge Functions → Secrets*.
 
-   `--no-verify-jwt` is intended: the function checks the caller itself and only accepts the two allowed accounts.
-
-### 3. Website (GitHub Pages)
+### 2. Website (GitHub Pages)
 GitHub Actions only builds the website. Every push to `main` publishes it at `https://<user>.github.io/<repo>/`
 (**Settings → Pages → Source: GitHub Actions**).
 
 - **Without secrets the site runs in demo mode.** There's no login and no Supabase: items and photos are saved in that
-  browser only, and you name photos yourself in Review (no AI). This is handy for trying it out.
+  browser only. This is handy for trying it out.
 - **For the real shared version**, add these under **Settings → Secrets and variables → Actions** and re-run the
   *Web app* action:
 
 | Secret | Value |
 |---|---|
 | `EXPO_PUBLIC_SUPABASE_URL` | Project URL |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | anon public key (meant to be public: the database rules do the protecting) |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` key (meant to be public: the database rules do the protecting). Never the `sb_secret_…` key. |
 
   The sign-in screen still has a "Try it without an account" button for demo mode.
 
-### 4. Android APK (built on your computer)
+### 3. Android APK (built on your computer)
 You need Node 22, JDK 17 and the Android SDK (installing Android Studio gives you both of the last two).
 ```bash
-cp .env.example .env        # fill in the Supabase URL + anon key (leave empty for a demo-only APK)
+cp .env.example .env        # fill in the Supabase URL + publishable key (leave empty for a demo-only APK)
 npm install
 npm run android:apk         # Windows: npm run android:apk:win
 ```
@@ -84,7 +86,7 @@ updates install over the old version.
 - A Free project **pauses after 7 days with no activity**. Daily use keeps it awake; if it pauses, press *Restore* in the
   dashboard (data is kept).
 - Limits that matter here: 500 MB database (years of items and recipes), 1 GB file storage (photos are resized to
-  ~150–250 KB, so roughly 4,000+ photos; photos you refuse are deleted), 500,000 Edge Function calls a month.
+  ~150–250 KB, so roughly 4,000+ photos; photos you refuse are deleted). No Edge Functions or paid APIs are used.
 
 ### Running locally
 ```bash
@@ -92,15 +94,14 @@ npm install
 npx expo start         # press w for web, or scan the QR with Expo Go on Android
 ```
 
-## How the AI flow works
-1. **Add photos** resizes each photo to 1280 px, uploads it to `fridge-photos/inbox/` and creates a `photo_jobs` row.
-2. The app calls the `process-photos` function. The function answers straight away and keeps working in the background.
-   It claims jobs one by one, asks Claude Haiku 5.5 what food is in the photo (structured output: Portuguese name, brand,
-   quantity, search query, storage place, shelf life), then searches Open Food Facts Portugal. Searches are cached in
-   `product_cache` and throttled to the API's limits. After ~110 s it hands over to a fresh run until the queue is empty.
-3. **Review** updates live. "Add new" creates the item in the place you pick, with the chosen product's Nutri-Score, stores and barcode,
-   plus an expiry estimate. Refuse drops it. Once every food in a photo is decided, the job disappears. The photo is
-   deleted unless an item uses it.
+## How the photo flow works
+1. **Add photos** resizes each photo to 1280 px, uploads it to the private `fridge-photos/inbox/` folder and creates a
+   `photo_jobs` row: the Review inbox, shared live by both devices.
+2. In **Review**, for each food in the photo you search the product by name (this device's product list first, then
+   Open Food Facts Portugal) or scan its barcode, pick the place, and either **Add new** or match it to an existing item.
+   The item gets the photo plus the product's Nutri-Score, stores and barcode.
+3. Refuse drops a food. Once every food in a photo is decided, the photo leaves the inbox and is deleted unless an item
+   uses it.
 
 ## Project layout
 ```
@@ -109,8 +110,7 @@ src/app/              add / edit item, item details, places, settings (2FA), log
 src/app/recipe/       recipe details, save/edit recipe, find on Cookidoo
 src/lib/store.ts      local-first sync: device cache → one fetch → realtime patches (shared by all screens)
 src/lib/              Supabase client, items, jobs, places, recipes, local DB (.ts native / .web.ts browser), products
-supabase/schema.sql   tables (items, places, recipes, photo jobs), allow-list, RLS, storage, realtime, job queue
-supabase/functions/   process-photos AI worker (Deno)
+supabase/schema.sql   tables (items, places, recipes, photo jobs), allow-list, RLS, storage, realtime
 .github/workflows/    web.yml → GitHub Pages (website only)
 ```
 

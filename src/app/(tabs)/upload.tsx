@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, Page, Tap } from '../../components/ui';
-import { kickWorker, queuePhoto } from '../../lib/jobs';
+import { queuePhoto } from '../../lib/jobs';
 import { useSession } from '../../lib/session';
 import { notify } from '../../lib/dialog';
 import { radius, useTheme } from '../../lib/theme';
@@ -40,7 +40,6 @@ export default function UploadPhotos() {
     };
     await Promise.all(Array.from({ length: PARALLEL }, worker));
     running.current = false;
-    kickWorker().catch(() => notify('Uploaded', 'Photos are saved. The AI will pick them up next time you open Review.'));
   };
 
   const pick = async () => {
@@ -70,9 +69,9 @@ export default function UploadPhotos() {
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
       <Page style={{ gap: 16 }}>
         <Text style={{ color: t.muted, fontSize: 15, lineHeight: 21 }}>
-          {demo
-            ? 'Demo mode: photos are kept in this browser and go straight to Review, where you type what each one is and pick the supermarket product.'
-            : 'Snap or pick as many photos as you like. They upload now and the AI sorts them out in the background, matching each food to real supermarket products. You approve them in Review.'}
+          {demo ? 'Demo mode: photos are kept in this browser. ' : ''}
+          Snap or pick as many photos as you like. Then, in Review, say what each one is: search the supermarket product,
+          scan its barcode, or match the photo to an item you already created.
         </Text>
 
         <View style={{ flexDirection: 'row', gap: 12 }}>

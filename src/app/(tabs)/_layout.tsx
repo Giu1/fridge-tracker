@@ -6,7 +6,7 @@ import { useTheme } from '../../lib/theme';
 export default function TabsLayout() {
   const t = useTheme();
   const { jobs } = useJobs();
-  const toReview = jobs.filter((j) => j.status === 'ready').length;
+  const toReview = jobs.length;
 
   return (
     <Tabs
