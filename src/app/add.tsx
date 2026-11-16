@@ -4,11 +4,13 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BarcodeModal } from '../components/BarcodeModal';
+import { DateField } from '../components/DateField';
 import { NutriScore } from '../components/NutriScore';
 import { Photo } from '../components/Photo';
 import { StoreDots, StoreFilter } from '../components/StoreChips';
 import { Button, Card, Chips, Field } from '../components/ui';
-import { addItem, isoInDays, itemsStore, updateItem } from '../lib/items';
+import { addItem, itemsStore, updateItem } from '../lib/items';
+import { parseDateInput } from '../lib/dates';
 import { kvGet, kvSet } from '../lib/localdb';
 import { placeLabel, usePlaces } from '../lib/places';
 import { localSuggestions, lookupBarcode, rankSuggestions, searchRemote, type Suggestion } from '../lib/products';
@@ -144,13 +146,14 @@ export default function AddOrEdit() {
 
   const save = async () => {
     if (!name.trim()) return;
-    if (expires && !/^\d{4}-\d{2}-\d{2}$/.test(expires)) return notify('Expiry date', 'Use the format YYYY-MM-DD, or the quick buttons.');
+    const exp = parseDateInput(expires);
+    if (exp && 'error' in exp) return notify('Expiry date', `${exp.error} You can also pick it on the calendar.`);
     setSaving(true);
     const draft = {
       name: name.trim(),
       quantity: quantity.trim() || null,
       location,
-      expires_on: expires || null,
+      expires_on: exp ? exp.iso : null,
       notes: notes.trim() || null,
       photo_path: editing?.photo_path ?? null,
       barcode: product?.code || null,
@@ -275,21 +278,7 @@ export default function AddOrEdit() {
           />
         </View>
 
-        <View style={{ gap: 6 }}>
-          <Field label="Expires" value={expires} onChangeText={setExpires} placeholder="YYYY-MM-DD (optional)" keyboardType="numbers-and-punctuation" />
-          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-            {[['Today', 0], ['+3 days', 3], ['+1 week', 7], ['+2 weeks', 14], ['+1 month', 30]].map(([label, n]) => (
-              <Pressable key={label as string} onPress={() => setExpires(isoInDays(n as number))} style={[styles.quick, { backgroundColor: t.chip }]}>
-                <Text style={{ color: t.text, fontSize: 13 }}>{label}</Text>
-              </Pressable>
-            ))}
-            {expires ? (
-              <Pressable onPress={() => setExpires('')} style={[styles.quick, { backgroundColor: t.chip }]}>
-                <Text style={{ color: t.danger, fontSize: 13 }}>Clear</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
+        <DateField label="Expires" value={expires} onChange={setExpires} />
 
         <Field label="Notes" value={notes} onChangeText={setNotes} placeholder="Opened on Monday, for the soup…" multiline style={{ minHeight: 70 }} />
 
@@ -307,5 +296,4 @@ const styles = StyleSheet.create({
   sugHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   sugRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   sugImg: { width: 44, height: 44, borderRadius: 8 },
-  quick: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14 },
 });
