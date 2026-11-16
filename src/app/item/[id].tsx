@@ -3,23 +3,35 @@ import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { NutriScore } from '../../components/NutriScore';
 import { Photo } from '../../components/Photo';
 import { StoreDots } from '../../components/StoreChips';
-import { Button, Card, Page } from '../../components/ui';
+import { Button, Card, Chips, Label, Page } from '../../components/ui';
 import { confirmAsk, notify } from '../../lib/dialog';
 import { expiryLabel } from '../../lib/expiry';
-import { deleteItem, useItems } from '../../lib/items';
+import { deleteItem, updateItem, useItem } from '../../lib/items';
+import { placeLabel, usePlaces } from '../../lib/places';
+import { recipesUsing, useRecipes } from '../../lib/recipes';
 import { useSession } from '../../lib/session';
 import { storesFromLabels } from '../../lib/stores';
 import { useTheme } from '../../lib/theme';
-import { LOCATIONS } from '../../lib/types';
 
 export default function ItemDetail() {
   const t = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session } = useSession();
-  const { items } = useItems();
-  const item = items.find((i) => i.id === id);
+  const { item, loading } = useItem(id);
+  const { places, byId } = usePlaces();
+  const { recipes } = useRecipes();
 
-  if (!item) return <Text style={{ color: t.muted, padding: 20 }}>Loading…</Text>;
+  if (!item) return <Text style={{ color: t.muted, padding: 20 }}>{loading ? 'Loading…' : 'This item was removed.'}</Text>;
+  const usedIn = recipesUsing(item, recipes);
+
+  const move = async (location: string) => {
+    if (location === item.location) return;
+    try {
+      await updateItem(item, { location });
+    } catch (e) {
+      notify('Could not move', (e as Error).message);
+    }
+  };
   const exp = expiryLabel(item, t);
 
   const remove = async () => {
@@ -51,6 +63,18 @@ export default function ItemDetail() {
           {exp && <Text style={{ color: exp.color, fontWeight: '700' }}>{exp.text}</Text>}
         </View>
 
+        <View style={{ gap: 6 }}>
+          <Label>Where</Label>
+          <Chips
+            value={item.location}
+            onChange={move}
+            options={[
+              ...places.map((p) => ({ key: p.id, label: placeLabel(byId, p.id) })),
+              ...(byId.has(item.location) ? [] : [{ key: item.location, label: placeLabel(byId, item.location) }]),
+            ]}
+          />
+        </View>
+
         <Card style={{ gap: 6 }}>
           <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600' }}>NUTRI-SCORE</Text>
           <NutriScore grade={item.nutriscore} full />
@@ -58,7 +82,6 @@ export default function ItemDetail() {
 
         <Card>
           {row('Quantity', item.quantity)}
-          {row('Where', LOCATIONS.find((l) => l.key === item.location)?.label)}
           {row('Expires', item.expires_on)}
           {row('Brand', item.brand)}
           {row('Product', item.product_name !== item.name ? item.product_name : null)}
@@ -82,6 +105,27 @@ export default function ItemDetail() {
             <Text style={{ color: t.accent, fontWeight: '600' }}>See full product on Open Food Facts →</Text>
           </Pressable>
         ) : null}
+
+        <Card style={{ gap: 8 }}>
+          <Label>Bimby recipes</Label>
+          {usedIn.map((r) => (
+            <Pressable key={r.id} onPress={() => router.push({ pathname: '/recipe/[id]', params: { id: r.id } })}>
+              <Text style={{ color: t.text, fontWeight: '600' }}>
+                🍲 {r.title}
+                {r.planned ? <Text style={{ color: t.accent }}>  · on the menu</Text> : null}
+              </Text>
+            </Pressable>
+          ))}
+          {!usedIn.length && <Text style={{ color: t.muted }}>None of your saved recipes use this yet.</Text>}
+          <View style={{ flexDirection: 'row', gap: 16, flexWrap: 'wrap', marginTop: 4 }}>
+            <Pressable onPress={() => router.push({ pathname: '/recipe/find', params: { with: item.id } })}>
+              <Text style={{ color: t.accent, fontWeight: '600' }}>Find on Cookidoo →</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push({ pathname: '/recipe/edit', params: { items: item.id } })}>
+              <Text style={{ color: t.accent, fontWeight: '600' }}>Save a recipe with it →</Text>
+            </Pressable>
+          </View>
+        </Card>
 
         <Button title="Edit" kind="secondary" onPress={() => router.push({ pathname: '/add', params: { id: item.id } })} />
         <Button title="Used it up / remove" kind="danger" onPress={remove} />

@@ -1,15 +1,17 @@
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Button } from '../components/ui';
-import { expiryLabel } from '../lib/expiry';
-import { useItems } from '../lib/items';
-import { byUrgency, cookidooSearchUrl, defaultPick, ingredientWord } from '../lib/recipes';
-import { notify } from '../lib/dialog';
-import { useTheme } from '../lib/theme';
+import { Button } from '../../components/ui';
+import { expiryLabel } from '../../lib/expiry';
+import { useItems } from '../../lib/items';
+import { byUrgency, cookidooSearchUrl, defaultPick, ingredientWord } from '../../lib/recipes';
+import { notify } from '../../lib/dialog';
+import { useTheme } from '../../lib/theme';
 
 /** Pick a few fridge items and open a Cookidoo (Bimby, pt-PT) search for them. */
-export default function Recipes() {
+export default function FindRecipes() {
   const t = useTheme();
+  const params = useLocalSearchParams<{ with?: string }>();
   const { items, loading } = useItems();
   const sorted = useMemo(() => byUrgency(items), [items]);
 
@@ -19,9 +21,9 @@ export default function Recipes() {
 
   useEffect(() => {
     if (inited || loading || !items.length) return;
-    setPicked(defaultPick(sorted));
+    setPicked(params.with ? params.with.split(',') : defaultPick(sorted));
     setInited(true);
-  }, [inited, loading, items.length, sorted]);
+  }, [inited, loading, items.length, sorted, params.with]);
 
   const wordFor = (id: string) => {
     if (words[id] !== undefined) return words[id];
@@ -93,7 +95,16 @@ export default function Recipes() {
         <Text numberOfLines={1} style={{ color: t.muted, fontSize: 13 }}>
           {terms.length ? `Cookidoo: “${terms.join(' ')}”` : 'Nothing picked: opens Cookidoo search'}
         </Text>
-        <Button title="Receitas Bimby no Cookidoo" onPress={open} />
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button title="Search Cookidoo" onPress={open} style={{ flex: 2 }} />
+          <Button
+            title="Save recipe"
+            kind="secondary"
+            style={{ flex: 1 }}
+            onPress={() => router.push({ pathname: '/recipe/edit', params: { items: picked.join(',') } })}
+          />
+        </View>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Found one you like? Copy its link in Cookidoo, then Save recipe.</Text>
       </View>
     </View>
   );

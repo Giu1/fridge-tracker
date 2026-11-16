@@ -2,10 +2,11 @@
  * Local SQLite database on each phone.
  *  - products: every Open Food Facts (Portugal) product reference you have seen or used,
  *    with Nutri-Score, so suggestions work offline and get better over time.
- *  - items_cache: last synced copy of the shared fridge, so you can check it with no signal.
+ *  - kv: small settings plus the last synced copy of each shared table (see store.ts), so the app opens instantly
+ *    and works with no signal.
  */
 import * as SQLite from 'expo-sqlite';
-import type { Item, Product } from './types';
+import type { Product } from './types';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -30,10 +31,7 @@ export function getDb() {
           updated_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS products_name_idx ON products(name);
-        CREATE TABLE IF NOT EXISTS items_cache2 (
-          id TEXT PRIMARY KEY NOT NULL,
-          json TEXT NOT NULL
-        );
+        DROP TABLE IF EXISTS items_cache2;
         CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY NOT NULL, v TEXT);
       `);
       return db;
@@ -120,22 +118,6 @@ export async function getProduct(code: string) {
   const db = await getDb();
   const r = await db.getFirstAsync<ProductRow>('SELECT * FROM products WHERE code = ?', code);
   return r ? rowToProduct(r) : null;
-}
-
-// ---- items cache -------------------------------------------------------------
-
-export async function cacheItems(items: Item[]) {
-  const db = await getDb();
-  await db.withTransactionAsync(async () => {
-    await db.runAsync('DELETE FROM items_cache2');
-    for (const it of items) await db.runAsync('INSERT INTO items_cache2 (id, json) VALUES (?,?)', it.id, JSON.stringify(it));
-  });
-}
-
-export async function cachedItems(): Promise<Item[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<{ json: string }>('SELECT json FROM items_cache2');
-  return rows.map((r) => JSON.parse(r.json) as Item).sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export async function kvGet(k: string) {

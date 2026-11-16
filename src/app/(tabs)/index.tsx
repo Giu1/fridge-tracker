@@ -7,13 +7,14 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View,
 import { NutriScore } from '../../components/NutriScore';
 import { Photo } from '../../components/Photo';
 import { StoreDots, StoreFilter } from '../../components/StoreChips';
-import { Segmented, Tap, tick } from '../../components/ui';
+import { Chips, Tap, tick } from '../../components/ui';
 import { expiryLabel } from '../../lib/expiry';
 import { useSession } from '../../lib/session';
 import { daysUntil, useItems } from '../../lib/items';
+import { placeLabel, usePlaces } from '../../lib/places';
 import { storesFromLabels } from '../../lib/stores';
 import { radius, useTheme } from '../../lib/theme';
-import { LOCATIONS, type Location } from '../../lib/types';
+import type { Location } from '../../lib/types';
 
 type Filter = 'all' | Location;
 type Sort = 'recent' | 'expiry' | 'health';
@@ -30,6 +31,7 @@ export default function Inventory() {
   const columns = width >= 1000 ? 4 : width >= 700 ? 3 : 2;
   const { items, loading, offline, reload } = useItems();
   const { demo } = useSession();
+  const { places, byId } = usePlaces();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('recent');
@@ -51,6 +53,15 @@ export default function Inventory() {
     return list;
   }, [items, fuse, query, filter, sort, storeSel, storesOf]);
 
+  const placeOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const i of items) counts.set(i.location, (counts.get(i.location) ?? 0) + 1);
+    const known = places.map((p) => ({ key: p.id, label: `${placeLabel(byId, p.id)}${counts.get(p.id) ? ` ${counts.get(p.id)}` : ''}` }));
+    // Items in a place that no longer exists (deleted on another device, or the old "pantry").
+    const orphans = [...counts.keys()].filter((k) => !byId.has(k)).map((k) => ({ key: k, label: `${placeLabel(byId, k)} ${counts.get(k)}` }));
+    return [{ key: 'all', label: `All ${items.length || ''}`.trim() }, ...known, ...orphans];
+  }, [items, places, byId]);
+
   const expiringSoon = items.filter((i) => {
     const d = daysUntil(i.expires_on);
     return d !== null && d <= 2;
@@ -70,7 +81,9 @@ export default function Inventory() {
           <View style={{ gap: 12, marginBottom: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8 }}>
               <View>
-                <Text style={{ color: t.text, fontSize: 32, fontWeight: '800', letterSpacing: -0.6 }}>Fridge</Text>
+                <Text style={{ color: t.text, fontSize: 32, fontWeight: '800', letterSpacing: -0.6 }}>
+                  {filter === 'all' ? 'All food' : byId.get(filter)?.label ?? placeLabel(byId, filter)}
+                </Text>
                 <Text style={{ color: t.muted, fontSize: 15 }}>
                   {items.length} item{items.length === 1 ? '' : 's'}
                   {offline ? ' · offline copy' : ''}
@@ -78,9 +91,6 @@ export default function Inventory() {
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Tap onPress={() => router.push('/recipes')} style={[styles.iconBtn, { backgroundColor: t.chip }]} accessibilityLabel="Receitas Bimby">
-                <Text style={{ fontSize: 20 }}>🍲</Text>
-              </Tap>
               <Tap onPress={() => router.push('/settings')} style={[styles.iconBtn, { backgroundColor: t.chip }]} accessibilityLabel="Settings">
                 <Feather name="settings" size={20} color={t.text} />
               </Tap>
@@ -98,7 +108,7 @@ export default function Inventory() {
             )}
 
             {items.length > 0 && (
-              <Tap onPress={() => router.push('/recipes')} style={[styles.banner, { backgroundColor: t.accentSoft }]}>
+              <Tap onPress={() => router.push('/recipe/find')} style={[styles.banner, { backgroundColor: t.accentSoft }]}>
                 <Text style={{ fontSize: 16 }}>🍲</Text>
                 <Text style={{ color: t.accent, fontWeight: '700', flex: 1 }}>Receitas Bimby com o que tens</Text>
                 <Feather name="chevron-right" size={16} color={t.accent} />
@@ -120,7 +130,7 @@ export default function Inventory() {
                 </Pressable>
               ) : null}
             </View>
-            <Segmented<Filter> value={filter} onChange={setFilter} options={[{ key: 'all', label: 'All' }, ...LOCATIONS]} />
+            <Chips<Filter> value={filter} onChange={setFilter} options={placeOptions} trailing={{ label: '+ Place', onPress: () => router.push('/places') }} />
             {presentStores.length > 0 && <StoreFilter selected={storeSel} onChange={setStoreSel} only={presentStores} />}
             <View style={{ flexDirection: 'row', gap: 8 }}>
               {SORTS.map((s) => {
@@ -146,7 +156,7 @@ export default function Inventory() {
             <View style={{ alignItems: 'center', marginTop: 60, gap: 10 }}>
               <Text style={{ fontSize: 48 }}>🥕</Text>
               <Text style={{ color: t.muted, fontSize: 16, textAlign: 'center' }}>
-                {items.length ? 'Nothing matches.' : 'The fridge is empty.\nAdd photos to fill it.'}
+                {items.length ? 'Nothing here.' : 'Nothing stored yet.\nAdd photos to fill it.'}
               </Text>
             </View>
           )
@@ -167,7 +177,7 @@ export default function Inventory() {
               <View style={{ padding: 12, gap: 3 }}>
                 <Text numberOfLines={2} style={{ color: t.text, fontWeight: '700', fontSize: 15, lineHeight: 19 }}>{item.name}</Text>
                 <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>
-                  {[item.quantity, item.brand].filter(Boolean).join(' · ') || LOCATIONS.find((l) => l.key === item.location)?.label}
+                  {[item.quantity, item.brand].filter(Boolean).join(' · ') || placeLabel(byId, item.location)}
                 </Text>
                 {exp && <Text style={{ color: exp.color, fontSize: 12, fontWeight: '700' }}>{exp.text}</Text>}
                 <StoreDots stores={storesOf.get(item.id) ?? []} size={16} />

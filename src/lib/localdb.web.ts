@@ -1,14 +1,19 @@
 /**
  * Web version of the local database (browser storage instead of SQLite).
- * Same functions as localdb.ts: product cache for suggestions + last copy of the fridge.
+ * Same functions as localdb.ts: product cache for suggestions + small key/value store (also holds table caches).
  */
-import type { Item, Product } from './types';
+import type { Product } from './types';
 
 type Stored = Product & { use_count: number; updated_at: number };
 const P_KEY = 'fridge.products.v1';
-const I_KEY = 'fridge.items.v1';
 const KV = 'fridge.kv.';
 const MAX_PRODUCTS = 3000;
+
+try {
+  globalThis.localStorage?.removeItem('fridge.items.v1'); // old cache format, replaced by store.ts
+} catch {
+  // ignore
+}
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -68,14 +73,6 @@ export async function productCount() {
 
 export async function getProduct(code: string) {
   return all()[code] ?? null;
-}
-
-export async function cacheItems(items: Item[]) {
-  save(I_KEY, items);
-}
-
-export async function cachedItems(): Promise<Item[]> {
-  return load<Item[]>(I_KEY, []);
 }
 
 export async function kvGet(k: string) {

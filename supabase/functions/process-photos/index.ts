@@ -38,7 +38,9 @@ const Detection = z.object({
   search_query: z.string().describe('Best Portuguese search query to find this exact product in a supermarket catalogue: brand + product + variant'),
   generic_query: z.string().describe('Shorter generic Portuguese query without brand, e.g. "iogurte grego"'),
   barcode: z.string().nullable().describe('EAN digits only if clearly readable in the photo, else null'),
-  location: z.enum(['fridge', 'freezer', 'pantry']).describe('Where this is normally stored after opening/buying'),
+  location: z
+    .enum(['fridge', 'freezer', 'emergency'])
+    .describe('Where this is normally stored at home: fridge, freezer, or emergency (shelf-stable supplies: tins, dry goods, long-life milk, water)'),
   shelf_life_days: z.number().int().nullable().describe('Typical days it keeps in that location from today, null if unsure'),
   confidence: z.number().describe('0 to 1: how sure you are about the product identity'),
 });

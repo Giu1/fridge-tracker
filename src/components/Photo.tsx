@@ -1,16 +1,17 @@
 import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ImageStyle } from 'react-native';
-import { photoUrls } from '../lib/items';
+import { cachedPhotoUrl, photoUrls } from '../lib/items';
 import { useTheme } from '../lib/theme';
 
 /** Shows a fridge photo from the private bucket (falls back to the product image, then a placeholder). */
 export function Photo({ path, fallbackUrl, style, label }: { path: string | null; fallbackUrl?: string | null; style: StyleProp<ImageStyle>; label?: string }) {
   const t = useTheme();
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, setUrl] = useState<string | null>(() => cachedPhotoUrl(path));
 
   useEffect(() => {
     let alive = true;
+    setUrl(cachedPhotoUrl(path));
     if (path) photoUrls([path]).then((m) => alive && setUrl(m[path] ?? null)).catch(() => {});
     return () => {
       alive = false;

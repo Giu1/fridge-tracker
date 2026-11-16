@@ -1,11 +1,37 @@
 export type NutriScore = 'a' | 'b' | 'c' | 'd' | 'e';
-export type Location = 'fridge' | 'freezer' | 'pantry';
+/** Id of a place (row in `locations`). The three defaults are 'fridge', 'freezer' and 'emergency'. */
+export type Location = string;
 
-export const LOCATIONS: { key: Location; label: string }[] = [
-  { key: 'fridge', label: 'Fridge' },
-  { key: 'freezer', label: 'Freezer' },
-  { key: 'pantry', label: 'Pantry' },
-];
+/** Where food is kept: Fridge, Freezer, Emergency supplies, plus any you add in the app. */
+export interface Place {
+  id: Location;
+  label: string;
+  icon: string | null;
+  sort: number;
+  created_at: string;
+}
+
+export interface RecipeIngredient {
+  name: string;
+  /** the stored item this ingredient was linked to (may have been used up since) */
+  item_id: string | null;
+}
+
+/** A Cookidoo (Bimby) recipe you saved, with its ingredients linked to stored items. */
+export interface Recipe {
+  id: string;
+  title: string;
+  url: string | null;
+  notes: string | null;
+  ingredients: RecipeIngredient[];
+  /** on this week's menu */
+  planned: boolean;
+  times_cooked: number;
+  last_cooked_on: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface Item {
   id: string;

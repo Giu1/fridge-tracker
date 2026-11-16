@@ -1,16 +1,40 @@
--- Fridge tracker: private shared inventory for exactly two people.
--- Run once in Supabase: Dashboard > SQL Editor > New query > paste everything > Run.
+-- Fridge tracker: private shared household (fridge, freezer, emergency supplies, recipes) for exactly two people.
+-- Run in Supabase: Dashboard > SQL Editor > New query > paste everything > Run.
 -- FIRST edit the two e-mail addresses in step 1.
+-- Safe to run again: it only adds what is missing, so re-run it after updating the app to upgrade an existing project.
 
 -- 1. The only two accounts allowed ---------------------------------------------
 create table if not exists public.app_users (
   email text primary key check (email = lower(email))
 );
-insert into public.app_users (email) values
-  ('you@example.com'),        -- <-- your e-mail (Android app)
-  ('wife@example.com')        -- <-- your wife's e-mail (web app)
-on conflict do nothing;
 alter table public.app_users enable row level security;  -- no policies: invisible to the API
+
+-- Never more than two accounts, whatever is run later.
+create or replace function public.app_users_max_two() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if (select count(*) from public.app_users) > 2 then
+    raise exception 'Only two accounts are allowed. Remove one from public.app_users first.';
+  end if;
+  return null;
+end $$;
+drop trigger if exists app_users_max_two on public.app_users;
+create trigger app_users_max_two after insert or update on public.app_users
+  for each statement execute function public.app_users_max_two();
+
+do $$
+declare
+  wanted text[] := array[
+    'you@example.com',        -- <-- your e-mail (Android app)
+    'wife@example.com'        -- <-- your wife's e-mail (web app)
+  ];
+begin
+  if 'you@example.com' = any(wanted) or 'wife@example.com' = any(wanted) then
+    raise exception 'Edit the two e-mail addresses in step 1 of this script first.';
+  end if;
+  delete from public.app_users where email <> all (select lower(unnest(wanted)));
+  insert into public.app_users (email) select lower(unnest(wanted)) on conflict do nothing;
+end $$;
 
 -- Block any sign-up that is not on the list (defence in depth: also turn sign-ups off in Auth settings).
 create or replace function public.block_unknown_signups() returns trigger
@@ -38,12 +62,26 @@ $$;
 revoke all on function public.is_allowed() from public, anon;
 grant execute on function public.is_allowed() to authenticated;
 
--- 2. Fridge items --------------------------------------------------------------
+-- 2. Places (Fridge, Freezer, Emergency supplies + any you add in the app) and items ----------
+create table if not exists public.locations (
+  id         text primary key default gen_random_uuid()::text,
+  label      text not null check (length(label) between 1 and 40),
+  icon       text check (icon is null or length(icon) <= 16),
+  sort       integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists locations_label_idx on public.locations (lower(label));
+insert into public.locations (id, label, icon, sort) values
+  ('fridge',    'Fridge',             '🥛', 0),
+  ('freezer',   'Freezer',            '🧊', 1),
+  ('emergency', 'Emergency supplies', '🥫', 2)
+on conflict (id) do nothing;
+
 create table if not exists public.items (
   id            uuid primary key default gen_random_uuid(),
   name          text not null check (length(name) between 1 and 200),
   quantity      text,
-  location      text not null default 'fridge' check (location in ('fridge','freezer','pantry')),
+  location      text not null default 'fridge',
   expires_on    date,
   photo_path    text,
   barcode       text,
@@ -60,6 +98,16 @@ create table if not exists public.items (
   updated_at    timestamptz not null default now()
 );
 create index if not exists items_created_idx on public.items (created_at desc);
+
+-- Upgrade from the first version (fixed fridge/freezer/pantry): pantry becomes Emergency supplies,
+-- and an item's place must be one of the places above (renaming a place keeps its items; a place with items
+-- inside cannot be deleted).
+alter table public.items drop constraint if exists items_location_check;
+update public.items set location = 'emergency' where location = 'pantry';
+alter table public.items drop constraint if exists items_location_fkey;
+alter table public.items add constraint items_location_fkey
+  foreign key (location) references public.locations (id) on update cascade on delete restrict;
+create index if not exists items_location_idx on public.items (location);
 
 create or replace function public.touch_updated_at() returns trigger language plpgsql as $$
 begin new.updated_at = now(); return new; end $$;
@@ -107,7 +155,27 @@ create table if not exists public.product_cache (
   fetched_at timestamptz not null default now()
 );
 
+-- 3b. Saved Cookidoo (Bimby) recipes, ingredients linked to stored items -------------------
+create table if not exists public.recipes (
+  id             uuid primary key default gen_random_uuid(),
+  title          text not null check (length(title) between 1 and 200),
+  url            text check (url is null or (url ~* '^https://' and length(url) <= 2000)),
+  notes          text check (notes is null or length(notes) <= 5000),
+  ingredients    jsonb not null default '[]'::jsonb   -- [{"name":"natas","item_id":"<items.id>"|null}]
+                 check (jsonb_typeof(ingredients) = 'array' and jsonb_array_length(ingredients) <= 60),
+  planned        boolean not null default false,       -- on the menu
+  times_cooked   integer not null default 0 check (times_cooked >= 0),
+  last_cooked_on date,
+  created_by     uuid default auth.uid() references auth.users(id) on delete set null,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+drop trigger if exists recipes_touch on public.recipes;
+create trigger recipes_touch before update on public.recipes for each row execute function public.touch_updated_at();
+
 -- 4. Row level security: only the two allowed accounts, nothing for anyone else ---------
+alter table public.locations     enable row level security;
+alter table public.recipes       enable row level security;
 alter table public.items         enable row level security;
 alter table public.photo_jobs    enable row level security;
 alter table public.product_cache enable row level security;
@@ -120,6 +188,14 @@ drop policy if exists "allowed users manage jobs" on public.photo_jobs;
 create policy "allowed users manage jobs" on public.photo_jobs
   for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
 
+drop policy if exists "allowed users manage places" on public.locations;
+create policy "allowed users manage places" on public.locations
+  for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
+
+drop policy if exists "allowed users manage recipes" on public.recipes;
+create policy "allowed users manage recipes" on public.recipes
+  for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
+
 drop policy if exists "allowed users read cache" on public.product_cache;
 create policy "allowed users read cache" on public.product_cache
   for select to authenticated using (public.is_allowed());
@@ -127,6 +203,12 @@ create policy "allowed users read cache" on public.product_cache
 -- 5. Live sync between the phone and the browser ---------------------------------
 alter table public.items replica identity full;
 alter table public.photo_jobs replica identity full;
+alter table public.locations replica identity full;
+alter table public.recipes replica identity full;
+do $$ begin alter publication supabase_realtime add table public.locations;
+exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.recipes;
+exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.items;
 exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.photo_jobs;

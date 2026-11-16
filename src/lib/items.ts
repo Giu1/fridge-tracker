@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
 import { prepareImage, readBytes } from './files';
-import { demoItems, demoPhotoUrls, newId, putDemoPhoto, removeDemoPhoto, saveDemoItems, subscribeDemo } from './demo';
-import { cacheItems, cachedItems, markProductUsed } from './localdb';
+import { DEMO_KEYS, demoPhotoUrls, putDemoPhoto, readDemo, removeDemoPhoto } from './demo';
+import { kvGet, kvSet, markProductUsed } from './localdb';
 import { isDemo } from './mode';
+import { deleteRow, insertRow, tableStore, updateRow, useStore } from './store';
 import { PHOTO_BUCKET, supabase } from './supabase';
 import type { Item, ItemDraft } from './types';
 
@@ -19,17 +19,54 @@ export async function uploadPhoto(localUri: string, folder: 'items' | 'inbox' = 
   return path;
 }
 
-// Short-lived signed URLs (1 h) for the private bucket; images stay cached on disk by storage path.
+// Signed links (valid 1 h) for the private bucket. Kept on this device so photos show at once after a reload,
+// and requested in one batch per screen instead of one request per photo.
 const urlCache = new Map<string, { url: string; exp: number }>();
 const TTL = 60 * 60;
+const URL_KEY = 'signed-urls.v1';
+let urlCacheLoaded: Promise<void> | null = null;
+let pending = new Set<string>();
+let flush: Promise<void> | null = null;
+
+const loadUrlCache = () =>
+  (urlCacheLoaded ??= kvGet(URL_KEY)
+    .then((raw) => {
+      const now = Date.now() / 1000;
+      for (const [p, v] of Object.entries(raw ? (JSON.parse(raw) as Record<string, { url: string; exp: number }>) : {}))
+        if (v.exp > now + 300 && !urlCache.has(p)) urlCache.set(p, v);
+    })
+    .catch(() => {}));
+
+const saveUrlCache = () => {
+  const now = Date.now() / 1000;
+  const live = Object.fromEntries([...urlCache].filter(([, v]) => v.exp > now + 300));
+  kvSet(URL_KEY, JSON.stringify(live)).catch(() => {});
+};
+
+/** Signed link already on this device (no network), for an instant first render. */
+export function cachedPhotoUrl(path: string | null) {
+  if (!path || isDemo()) return null;
+  const hit = urlCache.get(path);
+  return hit && hit.exp > Date.now() / 1000 + 300 ? hit.url : null;
+}
 
 export async function photoUrls(paths: string[]) {
   if (isDemo()) return demoPhotoUrls(paths);
+  await loadUrlCache();
   const now = Date.now() / 1000;
-  const missing = [...new Set(paths)].filter((p) => (urlCache.get(p)?.exp ?? 0) < now + 300);
-  if (missing.length) {
-    const { data } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrls(missing, TTL);
-    for (const d of data ?? []) if (d.path && d.signedUrl) urlCache.set(d.path, { url: d.signedUrl, exp: now + TTL });
+  for (const p of paths) if ((urlCache.get(p)?.exp ?? 0) < now + 300) pending.add(p);
+  if (pending.size) {
+    // Collect every photo asked for in this moment, then sign them all in one request.
+    flush ??= new Promise<void>((resolve) => setTimeout(resolve, 15)).then(async () => {
+      const batch = [...pending];
+      pending = new Set();
+      flush = null;
+      const { data } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrls(batch, TTL);
+      const at = Date.now() / 1000;
+      for (const d of data ?? []) if (d.path && d.signedUrl) urlCache.set(d.path, { url: d.signedUrl, exp: at + TTL });
+      saveUrlCache();
+    });
+    await flush;
   }
   const out: Record<string, string> = {};
   for (const p of paths) {
@@ -39,112 +76,64 @@ export async function photoUrls(paths: string[]) {
   return out;
 }
 
+/** Forget saved signed links (sign-out). */
+export function clearPhotoUrls() {
+  urlCache.clear();
+  kvSet(URL_KEY, null).catch(() => {});
+}
+
+/** Load saved signed links early (called at start-up). */
+export const warmPhotoUrls = () => loadUrlCache();
+
 /** Delete a photo only when no item still points at it (one photo can hold several foods). */
 export async function removePhotoIfUnused(path: string | null) {
   if (!path) return;
   if (isDemo()) {
-    if (!(await demoItems()).some((i) => i.photo_path === path)) await removeDemoPhoto(path);
+    const items = await readDemo<Item[]>(DEMO_KEYS.items, []);
+    if (!items.some((i) => i.photo_path === path)) await removeDemoPhoto(path);
     return;
   }
   const { count } = await supabase.from('items').select('id', { count: 'exact', head: true }).eq('photo_path', path);
   if (!count) await supabase.storage.from(PHOTO_BUCKET).remove([path]);
 }
 
-export async function fetchItems() {
-  if (isDemo()) return (await demoItems()).sort((a, b) => b.created_at.localeCompare(a.created_at));
-  const { data, error } = await supabase.from('items').select('*').order('created_at', { ascending: false });
-  if (error) throw error;
-  return data as Item[];
-}
+/** The shared household inventory (fridge, freezer, emergency supplies and any other place). */
+export const itemsStore = tableStore<Item>({
+  table: 'items',
+  demoKey: DEMO_KEYS.items,
+  sort: (a, b) => b.created_at.localeCompare(a.created_at),
+});
 
 export async function addItem(draft: ItemDraft, localPhotoUri?: string | null) {
   const photo_path = localPhotoUri ? await uploadPhoto(localPhotoUri) : draft.photo_path;
-  if (isDemo()) {
-    const now = new Date().toISOString();
-    const item: Item = { ...draft, photo_path, id: newId(), added_by: 'demo', created_at: now, updated_at: now };
-    await saveDemoItems([item, ...(await demoItems())]);
-    if (draft.barcode) markProductUsed(draft.barcode).catch(() => {});
-    return item;
-  }
-  const { data, error } = await supabase.from('items').insert({ ...draft, photo_path }).select().single();
-  if (error) throw error;
+  const item = await insertRow(itemsStore, { ...draft, photo_path, ...(isDemo() ? { added_by: 'demo' } : {}) });
   if (draft.barcode) markProductUsed(draft.barcode).catch(() => {});
-  return data as Item;
+  return item;
 }
 
 export async function updateItem(item: Item, patch: Partial<ItemDraft>, localPhotoUri?: string | null) {
   let photo_path = patch.photo_path ?? item.photo_path;
   if (localPhotoUri) photo_path = await uploadPhoto(localPhotoUri);
-  if (isDemo()) {
-    const updated: Item = { ...item, ...patch, photo_path, updated_at: new Date().toISOString() };
-    await saveDemoItems((await demoItems()).map((i) => (i.id === item.id ? updated : i)));
-    if (localPhotoUri) await removePhotoIfUnused(item.photo_path);
-    return updated;
-  }
-  const { data, error } = await supabase.from('items').update({ ...patch, photo_path }).eq('id', item.id).select().single();
-  if (error) throw error;
-  if (localPhotoUri) await removePhotoIfUnused(item.photo_path);
+  const updated = await updateRow(itemsStore, item.id, { ...patch, photo_path });
+  if (item.photo_path && item.photo_path !== photo_path) await removePhotoIfUnused(item.photo_path);
   if (patch.barcode && patch.barcode !== item.barcode) markProductUsed(patch.barcode).catch(() => {});
-  return data as Item;
+  return updated;
 }
 
 export async function deleteItem(item: Item) {
-  if (isDemo()) {
-    await saveDemoItems((await demoItems()).filter((i) => i.id !== item.id));
-    await removePhotoIfUnused(item.photo_path);
-    return;
-  }
-  const { error } = await supabase.from('items').delete().eq('id', item.id);
-  if (error) throw error;
+  await deleteRow(itemsStore, item.id);
   await removePhotoIfUnused(item.photo_path);
 }
 
-/** Live list of the shared fridge: cached copy first, then server, then realtime updates. */
+/** Live list of the shared household: instant from this device's copy, then kept in sync. */
 export function useItems() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [offline, setOffline] = useState(false);
+  const { rows, loading, offline } = useStore(itemsStore);
+  return { items: rows, loading, offline, reload: itemsStore.refresh };
+}
 
-  const reload = useCallback(async () => {
-    try {
-      const fresh = await fetchItems();
-      setItems(fresh);
-      setOffline(false);
-      cacheItems(fresh).catch(() => {});
-    } catch {
-      setOffline(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    cachedItems().then((c) => {
-      if (active && c.length) {
-        setItems((cur) => (cur.length ? cur : c));
-        setLoading(false);
-      }
-    });
-    reload();
-    if (isDemo()) {
-      const off = subscribeDemo(reload);
-      return () => {
-        active = false;
-        off();
-      };
-    }
-    const channel = supabase
-      .channel(`items-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, () => reload())
-      .subscribe();
-    return () => {
-      active = false;
-      supabase.removeChannel(channel);
-    };
-  }, [reload]);
-
-  return { items, loading, offline, reload };
+export function useItem(id: string | undefined) {
+  const { items, loading } = useItems();
+  return { item: id ? items.find((i) => i.id === id) ?? null : null, loading };
 }
 
 export function daysUntil(date: string | null) {
