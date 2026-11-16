@@ -59,7 +59,8 @@ GitHub Actions only builds the website. Every push to `main` publishes it at `ht
 
 - **Without secrets the site runs in demo mode.** There's no login and no Supabase: items and photos are saved in that
   browser only. This is handy for trying it out.
-- **For the real shared version**, add these under **Settings → Secrets and variables → Actions** and re-run the
+- **For the real shared version**, add both of these under **Settings → Secrets and variables → Actions** (as
+  repository secrets or as repository variables; both work) and re-run the
   *Web app* action:
 
 | Secret | Value |
