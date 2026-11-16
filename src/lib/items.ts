@@ -5,6 +5,7 @@ import { isDemo } from './mode';
 import { deleteRow, insertRow, tableStore, updateRow, useStore } from './store';
 import { PHOTO_BUCKET, supabase } from './supabase';
 import type { Item, ItemDraft } from './types';
+import { toIso } from './dates';
 
 const randomId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -147,5 +148,5 @@ export function daysUntil(date: string | null) {
 export const isoInDays = (n: number) => {
   const d = new Date();
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return toIso(d); // local date: toISOString() is UTC and can land on the wrong day
 };
