@@ -114,6 +114,37 @@ begin new.updated_at = now(); return new; end $$;
 drop trigger if exists items_touch on public.items;
 create trigger items_touch before update on public.items for each row execute function public.touch_updated_at();
 
+-- 2b. Categories (Dairy, Meat, ...): a coloured tag on each item, separate from where it is kept.
+-- Created, renamed, recoloured and removed in the app. Removing one leaves its items without a category.
+create table if not exists public.categories (
+  id         text primary key default gen_random_uuid()::text,
+  label      text not null check (length(label) between 1 and 40),
+  color      text not null default '#8B8D98' check (color ~ '^#[0-9A-Fa-f]{6}$'),
+  sort       integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists categories_label_idx on public.categories (lower(label));
+-- A few to start with, only while there are none (so ones you delete do not come back on a re-run).
+insert into public.categories (id, label, color, sort)
+select * from (values
+  ('dairy',     'Dairy',          '#0090FF', 0),
+  ('meat',      'Meat',           '#E5484D', 1),
+  ('fish',      'Fish',           '#12A594', 2),
+  ('veg',       'Vegetables',     '#46A758', 3),
+  ('fruit',     'Fruit',          '#F76B15', 4),
+  ('grains',    'Bread & grains', '#FFC53D', 5),
+  ('drinks',    'Drinks',         '#6E56CF', 6),
+  ('leftovers', 'Leftovers',      '#8D6E63', 7)
+) v(id, label, color, sort)
+where not exists (select 1 from public.categories)
+on conflict do nothing;
+
+alter table public.items add column if not exists category_id text;
+alter table public.items drop constraint if exists items_category_fkey;
+alter table public.items add constraint items_category_fkey
+  foreign key (category_id) references public.categories (id) on update cascade on delete set null;
+create index if not exists items_category_idx on public.items (category_id);
+
 -- 3. Photo inbox: uploaded photos waiting for you to say what they are (no AI) ----------
 create table if not exists public.photo_jobs (
   id          uuid primary key default gen_random_uuid(),
@@ -195,6 +226,7 @@ exception when duplicate_object then null; end $$;
 -- 4. Row level security: only the two allowed accounts, nothing for anyone else ---------
 alter table public.locations     enable row level security;
 alter table public.recipes       enable row level security;
+alter table public.categories    enable row level security;
 alter table public.items         enable row level security;
 alter table public.photo_jobs    enable row level security;
 
@@ -210,6 +242,10 @@ drop policy if exists "allowed users manage places" on public.locations;
 create policy "allowed users manage places" on public.locations
   for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
 
+drop policy if exists "allowed users manage categories" on public.categories;
+create policy "allowed users manage categories" on public.categories
+  for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
+
 drop policy if exists "allowed users manage recipes" on public.recipes;
 create policy "allowed users manage recipes" on public.recipes
   for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
@@ -219,7 +255,10 @@ alter table public.items replica identity full;
 alter table public.photo_jobs replica identity full;
 alter table public.locations replica identity full;
 alter table public.recipes replica identity full;
+alter table public.categories replica identity full;
 do $$ begin alter publication supabase_realtime add table public.locations;
+exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.categories;
 exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.recipes;
 exception when duplicate_object then null; end $$;

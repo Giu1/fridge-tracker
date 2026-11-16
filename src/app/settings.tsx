@@ -118,6 +118,12 @@ export default function Settings() {
         </Card>
 
         <Card style={{ gap: 10 }}>
+          <Label>Categories</Label>
+          <Text style={{ color: t.text }}>Coloured tags like Dairy or Meat, shown on every card. Shared by both accounts.</Text>
+          <Button title="Manage categories" kind="secondary" onPress={() => router.push('/categories')} />
+        </Card>
+
+        <Card style={{ gap: 10 }}>
           <Label>Supermarkets</Label>
           <Text style={{ color: t.muted }}>Open a shop's website. On an item, the Shops card opens that product there and keeps its product links.</Text>
           <ShopShortcuts />

@@ -9,6 +9,7 @@ export const DEMO_KEYS = {
   locations: 'demo.locations.v1',
   recipes: 'demo.recipes.v1',
   links: 'demo.links.v1',
+  categories: 'demo.categories.v1',
 } as const;
 const PHOTO = 'demo.photo.';
 
