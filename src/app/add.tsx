@@ -4,11 +4,13 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BarcodeModal } from '../components/BarcodeModal';
+import { CategoryChips } from '../components/Category';
 import { DateField } from '../components/DateField';
 import { NutriScore } from '../components/NutriScore';
 import { Photo } from '../components/Photo';
 import { StoreDots, StoreFilter } from '../components/StoreChips';
 import { Button, Card, Chips, Field } from '../components/ui';
+import { useCategories } from '../lib/categories';
 import { addItem, itemsStore, updateItem } from '../lib/items';
 import { parseDateInput } from '../lib/dates';
 import { kvGet, kvSet } from '../lib/localdb';
@@ -24,12 +26,14 @@ export default function AddOrEdit() {
   const t = useTheme();
   const { id, place } = useLocalSearchParams<{ id?: string; place?: string }>();
   const { places, byId } = usePlaces();
+  const { categories } = useCategories();
   const [editing, setEditing] = useState<Item | null>(null);
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState('');
   const [location, setLocation] = useState<Location>(place || 'fridge');
+  const [category, setCategory] = useState<string | null>(null);
   const [expires, setExpires] = useState('');
   const [notes, setNotes] = useState('');
   const [product, setProduct] = useState<Product | null>(null);
@@ -61,6 +65,7 @@ export default function AddOrEdit() {
       setName(it.name);
       setQuantity(it.quantity ?? '');
       setLocation(it.location);
+      setCategory(it.category_id ?? null);
       setExpires(it.expires_on ?? '');
       setNotes(it.notes ?? '');
       if (it.barcode || it.nutriscore) {
@@ -164,6 +169,8 @@ export default function AddOrEdit() {
       nova_group: product?.nova_group ?? null,
       kcal_100g: product?.kcal_100g ?? null,
       off_image_url: product?.image_url ?? null,
+      // Only sent when set, so saving still works before the server has the categories upgrade.
+      ...(category || editing?.category_id ? { category_id: category } : {}),
     };
     try {
       if (editing) await updateItem(editing, draft, photoUri);
@@ -275,6 +282,16 @@ export default function AddOrEdit() {
               ...(byId.has(location) ? [] : [{ key: location, label: placeLabel(byId, location) }]),
             ]}
             trailing={{ label: '+ Place', onPress: () => router.push('/places') }}
+          />
+        </View>
+
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: t.muted, fontSize: 13, fontWeight: '600' }}>CATEGORY</Text>
+          <CategoryChips
+            value={category}
+            onChange={setCategory}
+            categories={categories}
+            trailing={{ label: categories.length ? '+ Category' : '+ Add a category', onPress: () => router.push('/categories') }}
           />
         </View>
 

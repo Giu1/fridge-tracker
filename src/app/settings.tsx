@@ -116,6 +116,12 @@ export default function Settings() {
           <Button title="Manage places" kind="secondary" onPress={() => router.push('/places')} />
         </Card>
 
+        <Card style={{ gap: 10 }}>
+          <Label>Categories</Label>
+          <Text style={{ color: t.text }}>Coloured tags like Dairy or Meat, shown on every card. Shared by both accounts.</Text>
+          <Button title="Manage categories" kind="secondary" onPress={() => router.push('/categories')} />
+        </Card>
+
         <Card style={{ gap: 6 }}>
           <Label>This device</Label>
           <Text style={{ color: t.muted }}>{count ?? '…'} supermarket products saved locally for quick suggestions. Your food, places and recipes are also kept on this

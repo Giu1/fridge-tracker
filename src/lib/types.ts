@@ -11,6 +11,16 @@ export interface Place {
   created_at: string;
 }
 
+/** A coloured tag for the kind of food (Dairy, Meat, ...), separate from the place it is kept. */
+export interface Category {
+  id: string;
+  label: string;
+  /** #RRGGBB */
+  color: string;
+  sort: number;
+  created_at: string;
+}
+
 export interface RecipeIngredient {
   name: string;
   /** the stored item this ingredient was linked to (may have been used up since) */
@@ -38,6 +48,8 @@ export interface Item {
   name: string;
   quantity: string | null;
   location: Location;
+  /** null = no category (also after its category was removed) */
+  category_id?: string | null;
   expires_on: string | null;
   photo_path: string | null;
   barcode: string | null;

@@ -8,6 +8,7 @@ export const DEMO_KEYS = {
   photo_jobs: 'demo.jobs.v1',
   locations: 'demo.locations.v1',
   recipes: 'demo.recipes.v1',
+  categories: 'demo.categories.v1',
 } as const;
 const PHOTO = 'demo.photo.';
 

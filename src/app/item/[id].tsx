@@ -1,9 +1,11 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import { CategoryChips, CategoryPill } from '../../components/Category';
 import { NutriScore } from '../../components/NutriScore';
 import { Photo } from '../../components/Photo';
 import { StoreDots } from '../../components/StoreChips';
 import { Button, Card, Chips, Label, Page } from '../../components/ui';
+import { useCategories } from '../../lib/categories';
 import { confirmAsk, notify } from '../../lib/dialog';
 import { expiryLabel } from '../../lib/expiry';
 import { deleteItem, updateItem, useItem } from '../../lib/items';
@@ -20,6 +22,7 @@ export default function ItemDetail() {
   const { item, loading } = useItem(id);
   const { places, byId } = usePlaces();
   const { recipes } = useRecipes();
+  const { categories, byId: catById } = useCategories();
 
   if (!item) return <Text style={{ color: t.muted, padding: 20 }}>{loading ? 'Loading…' : 'This item was removed.'}</Text>;
   const usedIn = recipesUsing(item, recipes);
@@ -33,6 +36,14 @@ export default function ItemDetail() {
     }
   };
   const exp = expiryLabel(item, t);
+  const category = item.category_id ? catById.get(item.category_id) : undefined;
+  const setCategory = async (category_id: string | null) => {
+    try {
+      await updateItem(item, { category_id });
+    } catch (e) {
+      notify('Could not change category', (e as Error).message);
+    }
+  };
 
   const remove = async () => {
     if (!(await confirmAsk('Remove from fridge?', item.name, 'Remove'))) return;
@@ -56,11 +67,24 @@ export default function ItemDetail() {
     <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 40 }}>
       <Stack.Screen options={{ title: '' }} />
       <Page>
-      <Photo path={item.photo_path} fallbackUrl={item.off_image_url} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 22 }} label={item.name} />
+      <Photo path={item.photo_path} fallbackUrl={item.off_image_url} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 22 }} label={item.name} color={category?.color} />
       <View style={{ padding: 16, gap: 14 }}>
         <View style={{ gap: 4 }}>
           <Text style={{ color: t.text, fontSize: 26, fontWeight: '800' }}>{item.name}</Text>
-          {exp && <Text style={{ color: exp.color, fontWeight: '700' }}>{exp.text}</Text>}
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {category && <CategoryPill category={category} />}
+            {exp && <Text style={{ color: exp.color, fontWeight: '700' }}>{exp.text}</Text>}
+          </View>
+        </View>
+
+        <View style={{ gap: 6 }}>
+          <Label>Category</Label>
+          <CategoryChips
+            value={item.category_id ?? null}
+            onChange={setCategory}
+            categories={categories}
+            trailing={{ label: categories.length ? '+ Category' : '+ Add a category', onPress: () => router.push('/categories') }}
+          />
         </View>
 
         <View style={{ gap: 6 }}>
