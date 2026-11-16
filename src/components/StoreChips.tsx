@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { openShop } from '../lib/links';
 import { PT_STORES, storeByKey, storeLogoUrl, type Store } from '../lib/stores';
 import { useTheme } from '../lib/theme';
 import { tick } from './ui';
@@ -27,7 +28,27 @@ export function StoreLogo({ store, size = 20 }: { store: Store; size?: number })
   );
 }
 
-/** Toggle chips with logos. `only` limits the list (e.g. to stores present in the fridge). */
+/** Logos that open each supermarket's website. */
+export function ShopShortcuts() {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {PT_STORES.map((s) => (
+        <Pressable
+          key={s.key}
+          onPress={() => openShop(s.key)}
+          accessibilityRole="link"
+          style={[styles.chip, { backgroundColor: t.card, borderColor: t.border }]}
+        >
+          <StoreLogo store={s} size={20} />
+          <Text style={{ color: t.text, fontWeight: '500', fontSize: 13 }}>{s.label} ↗</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+/** Toggle chips with logos (long-press one to open that shop's website). `only` limits the list (e.g. to stores present in the fridge). */
 export function StoreFilter({ selected, onChange, only }: { selected: string[]; onChange: (s: string[]) => void; only?: string[] }) {
   const t = useTheme();
   const list = only ? PT_STORES.filter((s) => only.includes(s.key)) : PT_STORES;
@@ -42,6 +63,9 @@ export function StoreFilter({ selected, onChange, only }: { selected: string[]; 
               tick();
               onChange(on ? selected.filter((k) => k !== s.key) : [...selected, s.key]);
             }}
+            onLongPress={() => openShop(s.key)}
+            delayLongPress={450}
+            accessibilityHint={`Tap to filter. Long-press to open the ${s.label} website.`}
             style={[styles.chip, { backgroundColor: on ? t.accentSoft : t.card, borderColor: on ? t.accent : t.border }]}
           >
             <StoreLogo store={s} size={20} />
