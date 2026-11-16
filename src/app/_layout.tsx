@@ -49,6 +49,7 @@ function Gate() {
         <Stack.Screen name="item/[id]" options={{ title: '' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="places" options={{ title: 'Places' }} />
+        <Stack.Screen name="categories" options={{ title: 'Categories' }} />
         <Stack.Screen name="recipe/find" options={{ title: 'Receitas Bimby' }} />
         <Stack.Screen name="recipe/edit" options={{ presentation: 'modal', title: 'Recipe' }} />
         <Stack.Screen name="recipe/[id]" options={{ title: '' }} />

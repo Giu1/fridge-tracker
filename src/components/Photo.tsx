@@ -2,10 +2,14 @@ import { Image } from 'expo-image';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ImageStyle } from 'react-native';
 import { cachedPhotoUrl, photoUrls } from '../lib/items';
+import { tint } from '../lib/categories';
 import { useTheme } from '../lib/theme';
 
 /** Shows a fridge photo from the private bucket (falls back to the product image, then a placeholder). */
-export function Photo({ path, fallbackUrl, style, label }: { path: string | null; fallbackUrl?: string | null; style: StyleProp<ImageStyle>; label?: string }) {
+/** `color` tints the placeholder (e.g. the item's category colour). */
+export function Photo({ path, fallbackUrl, style, label, color }: {
+  path: string | null; fallbackUrl?: string | null; style: StyleProp<ImageStyle>; label?: string; color?: string;
+}) {
   const t = useTheme();
   const [url, setUrl] = useState<string | null>(() => cachedPhotoUrl(path));
 
@@ -31,8 +35,8 @@ export function Photo({ path, fallbackUrl, style, label }: { path: string | null
     );
   }
   return (
-    <View style={[style as object, styles.placeholder, { backgroundColor: t.chip }]}>
-      <Text style={{ fontSize: 28 }}>{label ? label.trim().charAt(0).toUpperCase() : '🍽'}</Text>
+    <View style={[style as object, styles.placeholder, { backgroundColor: color ? tint(color, 0.18) : t.chip }]}>
+      <Text style={{ fontSize: 28, fontWeight: '800', color: color ?? t.muted }}>{label ? label.trim().charAt(0).toUpperCase() : '🍽'}</Text>
     </View>
   );
 }

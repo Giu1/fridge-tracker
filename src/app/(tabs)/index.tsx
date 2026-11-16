@@ -3,35 +3,46 @@ import Fuse from 'fuse.js';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
-import { NutriScore } from '../../components/NutriScore';
-import { Photo } from '../../components/Photo';
-import { StoreDots, StoreFilter } from '../../components/StoreChips';
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { CategoryChips } from '../../components/Category';
+import { ItemCard } from '../../components/ItemCard';
+import { StoreFilter } from '../../components/StoreChips';
 import { Chips, Tap, tick } from '../../components/ui';
-import { expiryLabel } from '../../lib/expiry';
+import { useCategories } from '../../lib/categories';
 import { useSession } from '../../lib/session';
 import { daysUntil, useItems } from '../../lib/items';
 import { placeLabel, usePlaces } from '../../lib/places';
 import { storesFromLabels } from '../../lib/stores';
 import { radius, useTheme } from '../../lib/theme';
 import type { Location } from '../../lib/types';
+import { useViewMode, type ViewMode } from '../../lib/viewMode';
 
 type Filter = 'all' | Location;
-type Sort = 'recent' | 'expiry' | 'health';
+type Sort = 'recent' | 'expiry' | 'health' | 'category';
 const SORTS: { key: Sort; label: string }[] = [
   { key: 'recent', label: 'Newest' },
   { key: 'expiry', label: 'Expiring' },
   { key: 'health', label: 'Healthiest' },
+  { key: 'category', label: 'Category' },
+];
+const VIEWS: { key: ViewMode; icon: keyof typeof Feather.glyphMap; label: string }[] = [
+  { key: 'grid', icon: 'grid', label: 'Grid view' },
+  { key: 'list', icon: 'list', label: 'List view' },
+  { key: 'compact', icon: 'menu', label: 'Compact view' },
 ];
 
 export default function Inventory() {
   const t = useTheme();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const columns = width >= 1000 ? 4 : width >= 700 ? 3 : 2;
+  const [view, setView] = useViewMode();
+  const columns = view === 'grid' ? (width >= 1000 ? 4 : width >= 700 ? 3 : 2) : width >= 900 ? 2 : 1;
+  const gap = view === 'grid' ? 12 : view === 'list' ? 10 : 6;
   const { items, loading, offline, reload } = useItems();
   const { demo } = useSession();
   const { places, byId } = usePlaces();
+  const { categories, byId: catById } = useCategories();
+  const [catSel, setCatSel] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('recent');
@@ -47,11 +58,22 @@ export default function Inventory() {
   const shown = useMemo(() => {
     let list = query.trim() ? fuse.search(query).map((r) => r.item) : [...items];
     if (filter !== 'all') list = list.filter((i) => i.location === filter);
+    if (catSel) list = list.filter((i) => i.category_id === catSel);
     if (storeSel.length) list = list.filter((i) => (storesOf.get(i.id) ?? []).some((k) => storeSel.includes(k)));
     if (sort === 'expiry') list.sort((a, b) => (a.expires_on ?? '9999').localeCompare(b.expires_on ?? '9999'));
     if (sort === 'health') list.sort((a, b) => (a.nutriscore ?? 'z').localeCompare(b.nutriscore ?? 'z'));
+    if (sort === 'category') {
+      const rank = (id: string | null | undefined) => (id ? catById.get(id)?.sort ?? 1e6 : 1e6);
+      list.sort((a, b) => rank(a.category_id) - rank(b.category_id));
+    }
     return list;
-  }, [items, fuse, query, filter, sort, storeSel, storesOf]);
+  }, [items, fuse, query, filter, sort, storeSel, storesOf, catSel, catById]);
+
+  const catCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const i of items) if (i.category_id) m.set(i.category_id, (m.get(i.category_id) ?? 0) + 1);
+    return m;
+  }, [items]);
 
   const placeOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -70,12 +92,14 @@ export default function Inventory() {
   return (
     <View style={{ flex: 1 }}>
       <FlatList
-        key={columns}
+        key={`${view}-${columns}`}
         data={[...shown, ...Array.from({ length: (columns - (shown.length % columns)) % columns }, () => null)]}
         keyExtractor={(i, n) => i?.id ?? `pad-${n}`}
         numColumns={columns}
-        columnWrapperStyle={{ gap: 12 }}
-        contentContainerStyle={{ padding: 16, paddingTop: insets.top + 12, gap: 12, paddingBottom: 110, width: '100%', maxWidth: 1100, alignSelf: 'center' }}
+        columnWrapperStyle={columns > 1 ? { gap } : undefined}
+        initialNumToRender={view === 'compact' ? 24 : 10}
+        windowSize={7}
+        contentContainerStyle={{ padding: 16, paddingTop: insets.top + 12, gap, paddingBottom: 110, width: '100%', maxWidth: 1100, alignSelf: 'center' }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={t.accent} />}
         ListHeaderComponent={
           <View style={{ gap: 12, marginBottom: 4 }}>
@@ -131,8 +155,17 @@ export default function Inventory() {
               ) : null}
             </View>
             <Chips<Filter> value={filter} onChange={setFilter} options={placeOptions} trailing={{ label: '+ Place', onPress: () => router.push('/places') }} />
+            <CategoryChips
+              value={catSel}
+              onChange={setCatSel}
+              categories={categories}
+              counts={catCounts}
+              allLabel="Any kind"
+              trailing={{ label: categories.length ? '+ Category' : '+ Add categories', onPress: () => router.push('/categories') }}
+            />
             {presentStores.length > 0 && <StoreFilter selected={storeSel} onChange={setStoreSel} only={presentStores} />}
-            <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ gap: 8 }}>
               {SORTS.map((s) => {
                 const on = sort === s.key;
                 return (
@@ -148,6 +181,27 @@ export default function Inventory() {
                   </Pressable>
                 );
               })}
+            </ScrollView>
+            <View style={[styles.views, { backgroundColor: t.chip }]}>
+              {VIEWS.map((v) => {
+                const on = view === v.key;
+                return (
+                  <Pressable
+                    key={v.key}
+                    onPress={() => {
+                      tick();
+                      setView(v.key);
+                    }}
+                    accessibilityLabel={v.label}
+                    accessibilityState={{ selected: on }}
+                    hitSlop={4}
+                    style={[styles.viewBtn, on && { backgroundColor: t.elevated }]}
+                  >
+                    <Feather name={v.icon} size={16} color={on ? t.text : t.muted} />
+                  </Pressable>
+                );
+              })}
+            </View>
             </View>
           </View>
         }
@@ -161,30 +215,21 @@ export default function Inventory() {
             </View>
           )
         }
-        renderItem={({ item }) => {
-          if (!item) return <View style={{ flex: 1 }} />;
-          const exp = expiryLabel(item, t);
-          return (
-            <Tap
-              onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
-              style={[styles.card, { backgroundColor: t.card, borderColor: t.border }]}
-              haptic={false}
-            >
-              <Photo path={item.photo_path} fallbackUrl={item.off_image_url} style={styles.photo} label={item.name} />
-              <View style={styles.badge}>
-                <NutriScore grade={item.nutriscore} />
-              </View>
-              <View style={{ padding: 12, gap: 3 }}>
-                <Text numberOfLines={2} style={{ color: t.text, fontWeight: '700', fontSize: 15, lineHeight: 19 }}>{item.name}</Text>
-                <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>
-                  {[item.quantity, item.brand].filter(Boolean).join(' · ') || placeLabel(byId, item.location)}
-                </Text>
-                {exp && <Text style={{ color: exp.color, fontSize: 12, fontWeight: '700' }}>{exp.text}</Text>}
-                <StoreDots stores={storesOf.get(item.id) ?? []} size={16} />
-              </View>
-            </Tap>
-          );
-        }}
+        renderItem={({ item }) =>
+          item ? (
+            <View style={{ flex: 1 }}>
+              <ItemCard
+                item={item}
+                mode={view}
+                category={item.category_id ? catById.get(item.category_id) : undefined}
+                placeText={placeLabel(byId, item.location)}
+                stores={storesOf.get(item.id) ?? []}
+              />
+            </View>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )
+        }
       />
       <Tap onPress={() => router.push('/add')} style={[styles.fab, { backgroundColor: t.accent }]} accessibilityLabel="Add one item by hand">
         <Feather name="plus" size={28} color={t.accentText} />
@@ -198,9 +243,8 @@ const styles = StyleSheet.create({
   banner: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: radius.md },
   search: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 14 },
   pill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1 },
-  card: { flex: 1, borderRadius: radius.lg, borderWidth: 1, overflow: 'hidden' },
-  photo: { width: '100%', aspectRatio: 1 },
-  badge: { position: 'absolute', top: 10, right: 10 },
+  views: { flexDirection: 'row', borderRadius: radius.pill, padding: 3, gap: 2 },
+  viewBtn: { width: 34, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   fab: {
     position: 'absolute', right: 20, bottom: 24, width: 60, height: 60, borderRadius: 30,
     alignItems: 'center', justifyContent: 'center', elevation: 5,
