@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { useRef, type ReactNode } from 'react';
 import {
-  ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Animated, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
   type PressableProps, type StyleProp, type TextInputProps, type ViewStyle,
 } from 'react-native';
 import { radius, useTheme } from '../lib/theme';
@@ -101,6 +101,39 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
   );
 }
 
+/** Horizontally scrolling pills: fits any number of places (Segmented is for a few fixed options). */
+export function Chips<T extends string>({ value, options, onChange, trailing }: {
+  value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; trailing?: { label: string; onPress: () => void };
+}) {
+  const t = useTheme();
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <Pressable
+            key={o.key}
+            onPress={() => {
+              tick();
+              onChange(o.key);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: on }}
+            style={[styles.chip, { backgroundColor: on ? t.accent : t.chip }]}
+          >
+            <Text style={{ color: on ? t.accentText : t.text, fontWeight: on ? '700' : '500', fontSize: 14 }}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+      {trailing && (
+        <Pressable onPress={trailing.onPress} style={[styles.chip, { borderWidth: 1, borderColor: t.border, borderStyle: 'dashed' }]}>
+          <Text style={{ color: t.accent, fontWeight: '600', fontSize: 14 }}>{trailing.label}</Text>
+        </Pressable>
+      )}
+    </ScrollView>
+  );
+}
+
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const t = useTheme();
   return <View style={[styles.card, { backgroundColor: t.card, borderColor: t.border }, style]}>{children}</View>;
@@ -123,6 +156,7 @@ export const styles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: 16, paddingVertical: 13, fontSize: 16 },
   seg: { flexDirection: 'row', borderRadius: radius.md, padding: 4 },
   segItem: { flex: 1, paddingVertical: 9, borderRadius: radius.sm + 2, alignItems: 'center' },
+  chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: radius.pill },
   card: { borderWidth: 1, borderRadius: radius.lg, padding: 16 },
   shadow: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
 });

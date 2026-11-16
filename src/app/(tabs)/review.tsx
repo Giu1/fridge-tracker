@@ -1,17 +1,21 @@
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { NutriScore } from '../../components/NutriScore';
 import { Photo } from '../../components/Photo';
 import { StoreDots } from '../../components/StoreChips';
-import { Button, Card, tick } from '../../components/ui';
-import { acceptDetection, bestCandidate, discardJob, kickWorker, rejectDetection, retryJob, useJobs } from '../../lib/jobs';
+import { ItemPicker } from '../../components/ItemPicker';
+import { Button, Card, Chips, tick } from '../../components/ui';
+import { acceptDetection, bestCandidate, discardJob, kickWorker, linkDetectionToItem, rejectDetection, retryJob, useJobs } from '../../lib/jobs';
+import { useItems } from '../../lib/items';
+import { placeLabel, usePlaces } from '../../lib/places';
+import { itemFuse } from '../../lib/recipes';
 import { notify } from '../../lib/dialog';
 import { localSuggestions, searchRemote, rankSuggestions } from '../../lib/products';
 import { useSession } from '../../lib/session';
 import { radius, useTheme } from '../../lib/theme';
-import type { Detection, PhotoJob, Product } from '../../lib/types';
+import type { Detection, Item, PhotoJob, Product } from '../../lib/types';
 
 type Choice = string; // product code, or 'none' = keep the AI's name only
 
@@ -21,6 +25,13 @@ export default function Review() {
   const [choice, setChoice] = useState<Record<string, Choice>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const { demo } = useSession();
+  const { items } = useItems();
+  const { places, byId } = usePlaces();
+  const fuse = useMemo(() => itemFuse(items), [items]);
+  // Per detection: the place you picked (else the AI's guess) and the open "link to an item" picker.
+  const [place, setPlace] = useState<Record<string, string>>({});
+  const [linking, setLinking] = useState<{ job: PhotoJob; i: number; d: Detection } | null>(null);
+  const placeOptions = places.map((p) => ({ key: p.id, label: placeLabel(byId, p.id) }));
   // Your own search per detection: replaces the AI's options (and is the only way in demo mode).
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [found, setFound] = useState<Record<string, (Product & { match: number })[]>>({});
@@ -89,7 +100,29 @@ export default function Review() {
   const accept = (job: PhotoJob, i: number, d: Detection) => {
     const c = chosen(job, i, d);
     const product = c === 'none' ? null : optionsFor(job, i, d).find((p) => p.code === c) ?? null;
-    return act(keyOf(job, i), () => acceptDetection(job, i, product, typed[keyOf(job, i)]));
+    return act(keyOf(job, i), () => acceptDetection(job, i, product, typed[keyOf(job, i)], placeFor(job, i, d)));
+  };
+
+  const placeFor = (job: PhotoJob, i: number, d: Detection) => {
+    const p = place[keyOf(job, i)] ?? d.location;
+    // The AI only knows the three default places; anything unknown (e.g. the old "pantry") goes to the first place.
+    return byId.has(p) ? p : p === 'pantry' && byId.has('emergency') ? 'emergency' : places[0]?.id ?? 'fridge';
+  };
+
+  /** Items already stored that look like this photo: link the photo to one of them instead of adding a duplicate. */
+  const lookalikes = (job: PhotoJob, i: number, d: Detection): Item[] => {
+    const q = typed[keyOf(job, i)]?.trim() || d.name_pt;
+    if (!q || q.length < 2) return [];
+    return fuse
+      .search(q, { limit: 3 })
+      .filter((r) => (r.score ?? 1) <= 0.35)
+      .map((r) => r.item);
+  };
+
+  const link = (job: PhotoJob, i: number, d: Detection, item: Item) => {
+    const c = chosen(job, i, d);
+    const product = c === 'none' ? null : optionsFor(job, i, d).find((p) => p.code === c) ?? null;
+    return act(keyOf(job, i), () => linkDetectionToItem(job, i, item, product));
   };
 
   const acceptAll = async () => {
@@ -100,7 +133,7 @@ export default function Review() {
         for (const [i, d] of (job.detections ?? []).entries()) {
           if (current.decisions?.[i]) continue;
           const c = chosen(job, i, d);
-          await acceptDetection(current, i, c === 'none' ? null : optionsFor(job, i, d).find((p) => p.code === c) ?? null, typed[keyOf(job, i)]);
+          await acceptDetection(current, i, c === 'none' ? null : optionsFor(job, i, d).find((p) => p.code === c) ?? null, typed[keyOf(job, i)], placeFor(job, i, d));
           current = { ...current, decisions: Object.assign([...(current.decisions ?? [])], { [i]: { status: 'accepted', item_id: '' } }) };
         }
         if (!job.detections?.length) await discardJob(job);
@@ -115,6 +148,7 @@ export default function Review() {
   const undecidedCount = demo ? 0 : ready.reduce((n, j) => n + (j.detections ?? []).filter((_, i) => !j.decisions?.[i]).length, 0);
 
   return (
+    <>
     <FlatList
       data={jobs.filter((j) => j.status !== 'pending' && j.status !== 'processing')}
       keyExtractor={(j) => j.id}
@@ -131,7 +165,7 @@ export default function Review() {
           )}
           {undecidedCount > 1 && (
             <Button
-              title={`Accept all ${undecidedCount} best guesses`}
+              title={`Add all ${undecidedCount} best guesses as new`}
               icon={<Feather name="check" size={18} color={t.accentText} />}
               onPress={acceptAll}
               busy={busy === 'all'}
@@ -254,6 +288,42 @@ export default function Review() {
                   </Pressable>
                 </View>
 
+                {(() => {
+                  const same = lookalikes(job, i, d);
+                  return (
+                    <View style={{ gap: 6, marginTop: 8 }}>
+                      <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.6 }}>
+                        {same.length ? 'ALREADY IN THE HOUSE? ADD THE PHOTO TO IT' : 'OR MATCH IT TO AN ITEM YOU CREATED'}
+                      </Text>
+                      {same.map((it) => (
+                        <Pressable
+                          key={it.id}
+                          onPress={() => link(job, i, d, it)}
+                          disabled={busy === k}
+                          style={[styles.option, { borderColor: t.border }]}
+                        >
+                          <Photo path={it.photo_path} fallbackUrl={it.off_image_url} style={styles.optImg} label={it.name} />
+                          <View style={{ flex: 1 }}>
+                            <Text numberOfLines={1} style={{ color: t.text, fontWeight: '600' }}>{it.name}</Text>
+                            <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>
+                              {[placeLabel(byId, it.location), it.quantity, it.photo_path ? 'has a photo' : 'no photo yet'].filter(Boolean).join(' · ')}
+                            </Text>
+                          </View>
+                          <Feather name="link" size={18} color={t.accent} />
+                        </Pressable>
+                      ))}
+                      {items.length > 0 && (
+                        <Pressable onPress={() => setLinking({ job, i, d })} hitSlop={6}>
+                          <Text style={{ color: t.accent, fontWeight: '600' }}>Pick another item…</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  );
+                })()}
+
+                <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.6, marginTop: 8 }}>OR ADD AS NEW, IN</Text>
+                <Chips value={placeFor(job, i, d)} onChange={(v) => setPlace((m) => ({ ...m, [k]: v }))} options={placeOptions} />
+
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
                   <Button
                     title="Refuse"
@@ -264,7 +334,7 @@ export default function Review() {
                     disabled={busy === k}
                   />
                   <Button
-                    title="Accept"
+                    title="Add new"
                     icon={<Feather name="check" size={18} color={t.accentText} />}
                     onPress={() => accept(job, i, d)}
                     busy={busy === k}
@@ -277,6 +347,19 @@ export default function Review() {
         </Card>
       )}
     />
+    <ItemPicker
+      visible={!!linking}
+      title="Which item is in this photo?"
+      items={items}
+      initial={linking ? typed[keyOf(linking.job, linking.i)]?.trim() || linking.d.name_pt : ''}
+      onPick={(item) => {
+        const l = linking;
+        setLinking(null);
+        if (l && item) link(l.job, l.i, l.d, item);
+      }}
+      onClose={() => setLinking(null)}
+    />
+    </>
   );
 }
 

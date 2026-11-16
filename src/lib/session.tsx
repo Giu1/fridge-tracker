@@ -1,6 +1,8 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { clearPhotoUrls, warmPhotoUrls } from './items';
 import { initMode, isDemo, setDemo } from './mode';
+import { resetStores } from './store';
 import { supabase } from './supabase';
 
 type Aal = 'aal1' | 'aal2' | null;
@@ -34,6 +36,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    warmPhotoUrls();
     (async () => {
       if (await initMode()) {
         setDemoState(true);
@@ -46,7 +49,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (data.session) await refreshMfa();
       setReady(true);
     })();
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      // Signed out (here or because the session expired): forget this device's copy of the household.
+      if (event === 'SIGNED_OUT' && !isDemo()) {
+        resetStores();
+        clearPhotoUrls();
+      }
       setSession(s);
       if (s) setTimeout(refreshMfa, 0); // don't call auth methods inside the callback
     });
@@ -59,14 +67,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     if (demo) {
       await setDemo(false);
+      resetStores();
       setDemoState(isDemo());
       return;
     }
     await supabase.auth.signOut();
+    resetStores();
   };
 
   const enterDemo = async () => {
     await setDemo(true);
+    resetStores();
     setDemoState(true);
   };
 

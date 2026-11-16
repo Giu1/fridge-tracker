@@ -23,7 +23,7 @@ export default function TabsLayout() {
         animation: 'shift',
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Fridge', headerShown: false, tabBarIcon: ({ color }) => <Feather name="grid" size={22} color={color as string} /> }} />
+      <Tabs.Screen name="index" options={{ title: 'Food', headerShown: false, tabBarIcon: ({ color }) => <Feather name="grid" size={22} color={color as string} /> }} />
       <Tabs.Screen
         name="upload"
         options={{ title: 'Add photos', tabBarIcon: ({ color }) => <Feather name="camera" size={22} color={color as string} /> }}
@@ -36,6 +36,10 @@ export default function TabsLayout() {
           tabBarBadge: toReview || undefined,
           tabBarBadgeStyle: { backgroundColor: t.accent, color: t.accentText, fontWeight: '700' },
         }}
+      />
+      <Tabs.Screen
+        name="recipes"
+        options={{ title: 'Recipes', tabBarIcon: ({ color }) => <Feather name="book-open" size={22} color={color as string} /> }}
       />
     </Tabs>
   );

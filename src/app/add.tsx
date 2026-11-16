@@ -7,25 +7,27 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, Sc
 import { NutriScore } from '../components/NutriScore';
 import { Photo } from '../components/Photo';
 import { StoreDots, StoreFilter } from '../components/StoreChips';
-import { Button, Card, Field, Segmented } from '../components/ui';
-import { addItem, isoInDays, updateItem } from '../lib/items';
-import { cachedItems, kvGet, kvSet } from '../lib/localdb';
+import { Button, Card, Chips, Field } from '../components/ui';
+import { addItem, isoInDays, itemsStore, updateItem } from '../lib/items';
+import { kvGet, kvSet } from '../lib/localdb';
+import { placeLabel, usePlaces } from '../lib/places';
 import { localSuggestions, lookupBarcode, rankSuggestions, searchRemote, type Suggestion } from '../lib/products';
 import { storeLabels } from '../lib/stores';
 import { notify } from '../lib/dialog';
 import { useTheme } from '../lib/theme';
-import { LOCATIONS, type Item, type Location, type Product } from '../lib/types';
+import type { Item, Location, Product } from '../lib/types';
 
 
 export default function AddOrEdit() {
   const t = useTheme();
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, place } = useLocalSearchParams<{ id?: string; place?: string }>();
+  const { places, byId } = usePlaces();
   const [editing, setEditing] = useState<Item | null>(null);
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [location, setLocation] = useState<Location>('fridge');
+  const [location, setLocation] = useState<Location>(place || 'fridge');
   const [expires, setExpires] = useState('');
   const [notes, setNotes] = useState('');
   const [product, setProduct] = useState<Product | null>(null);
@@ -50,9 +52,9 @@ export default function AddOrEdit() {
   // Load the item when editing.
   useEffect(() => {
     if (!id) return;
-    cachedItems().then((list) => {
-      const it = list.find((i) => i.id === id);
-      if (!it) return;
+    const load = () => {
+      const it = itemsStore.rows().find((i) => i.id === id);
+      if (!it) return false;
       setEditing(it);
       setName(it.name);
       setQuantity(it.quantity ?? '');
@@ -66,7 +68,14 @@ export default function AddOrEdit() {
           stores: [], categories: null,
         });
       }
+      return true;
+    };
+    if (load()) return;
+    // Opened straight from a link before the list was loaded: wait for it once.
+    const off = itemsStore.subscribe(() => {
+      if (load()) off();
     });
+    return off;
   }, [id]);
 
   // Fuzzy suggestions: local DB instantly, then Open Food Facts (Portugal) after a short pause.
@@ -255,7 +264,15 @@ export default function AddOrEdit() {
 
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.muted, fontSize: 13, fontWeight: '600' }}>WHERE</Text>
-          <Segmented value={location} onChange={setLocation} options={LOCATIONS} />
+          <Chips
+            value={location}
+            onChange={setLocation}
+            options={[
+              ...places.map((p) => ({ key: p.id, label: placeLabel(byId, p.id) })),
+              ...(byId.has(location) ? [] : [{ key: location, label: placeLabel(byId, location) }]),
+            ]}
+            trailing={{ label: '+ Place', onPress: () => router.push('/places') }}
+          />
         </View>
 
         <View style={{ gap: 6 }}>
@@ -276,7 +293,7 @@ export default function AddOrEdit() {
 
         <Field label="Notes" value={notes} onChangeText={setNotes} placeholder="Opened on Monday, for the soup…" multiline style={{ minHeight: 70 }} />
 
-        <Button title={editing ? 'Save changes' : 'Add to fridge'} onPress={save} busy={saving} disabled={!name.trim()} />
+        <Button title={editing ? 'Save changes' : `Add to ${byId.get(location)?.label ?? 'the house'}`} onPress={save} busy={saving} disabled={!name.trim()} />
       </ScrollView>
 
       <BarcodeModal visible={scanning} onClose={() => setScanning(false)} onCode={onScanned} />

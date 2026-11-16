@@ -1,10 +1,14 @@
 /** Local storage backend for demo mode: items, photo jobs and photos stay on this device. */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { toDataUrl } from './files';
-import type { Item, PhotoJob } from './types';
 
-const ITEMS = 'demo.items.v1';
-const JOBS = 'demo.jobs.v1';
+/** Storage keys of each table in demo mode (all start with "demo." so resetDemo wipes them). */
+export const DEMO_KEYS = {
+  items: 'demo.items.v1',
+  photo_jobs: 'demo.jobs.v1',
+  locations: 'demo.locations.v1',
+  recipes: 'demo.recipes.v1',
+} as const;
 const PHOTO = 'demo.photo.';
 
 const listeners = new Set<() => void>();
@@ -16,7 +20,7 @@ export const subscribeDemo = (fn: () => void) => {
   };
 };
 
-async function read<T>(key: string, fallback: T): Promise<T> {
+export async function readDemo<T>(key: string, fallback: T): Promise<T> {
   try {
     const raw = await AsyncStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -24,7 +28,7 @@ async function read<T>(key: string, fallback: T): Promise<T> {
     return fallback;
   }
 }
-async function write(key: string, value: unknown) {
+export async function writeDemo(key: string, value: unknown) {
   try {
     await AsyncStorage.setItem(key, JSON.stringify(value));
   } catch {
@@ -35,10 +39,6 @@ async function write(key: string, value: unknown) {
 
 export const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-export const demoItems = () => read<Item[]>(ITEMS, []);
-export const saveDemoItems = (items: Item[]) => write(ITEMS, items);
-export const demoJobs = () => read<PhotoJob[]>(JOBS, []);
-export const saveDemoJobs = (jobs: PhotoJob[]) => write(JOBS, jobs);
 
 export async function putDemoPhoto(localUri: string) {
   const dataUrl = await toDataUrl(localUri);
