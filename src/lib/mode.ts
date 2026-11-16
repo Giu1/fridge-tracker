@@ -1,5 +1,5 @@
 /**
- * Demo mode: the whole app runs in this browser/phone only (no Supabase, no login, no AI).
+ * Demo mode: the whole app runs in this browser/phone only (no Supabase, no login).
  * On automatically when the app is built without Supabase keys; can also be chosen on the login screen.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';

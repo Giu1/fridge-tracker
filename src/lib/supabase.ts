@@ -4,11 +4,17 @@ import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+// The *publishable* key (sb_publishable_…) is meant to be public: row level security does the protecting.
+// The old "anon" key still works until Supabase retires it. Never put the secret key (sb_secret_…) in the app:
+// anyone could read it from the APK or the website and bypass every rule.
+const rawKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const isSecretKey = rawKey.startsWith('sb_secret_') || rawKey.includes('service_role');
+if (isSecretKey) console.error('Refusing to use a Supabase SECRET key in the app. Use the publishable key (sb_publishable_…).');
+const key = isSecretKey ? '' : rawKey;
 
-export const isConfigured = url.startsWith('https://') && anonKey.length > 20;
+export const isConfigured = url.startsWith('https://') && key.length > 20;
 
-export const supabase = createClient(url || 'https://placeholder.supabase.co', anonKey || 'placeholder', {
+export const supabase = createClient(url || 'https://placeholder.supabase.co', key || 'placeholder', {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

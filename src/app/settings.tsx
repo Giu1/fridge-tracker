@@ -73,7 +73,7 @@ export default function Settings() {
           <Card style={{ gap: 10 }}>
             <Label>Demo mode</Label>
             <Text style={{ color: t.text }}>
-              Everything is saved only in this browser. There's no login, no sharing between devices and no AI: you name photos yourself in Review.
+              Everything is saved only in this browser. There's no login and no sharing between devices.
             </Text>
             <Button
               title="Delete all demo data"
@@ -121,7 +121,7 @@ export default function Settings() {
           <Text style={{ color: t.muted }}>{count ?? '…'} supermarket products saved locally for quick suggestions. Your food, places and recipes are also kept on this
             device so the app opens instantly; signing out erases that copy.</Text>
           <Text style={{ color: t.muted, fontSize: 12, marginTop: 6 }}>
-            Product data and Nutri-Scores: Open Food Facts (openfoodfacts.org), Open Database License. Photo recognition: Claude.
+            Product data and Nutri-Scores: Open Food Facts (openfoodfacts.org), Open Database License.
           </Text>
         </Card>
 

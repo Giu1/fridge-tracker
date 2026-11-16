@@ -3,43 +3,39 @@ import { addItem, isoInDays, removePhotoIfUnused, updateItem, uploadPhoto } from
 import { isDemo } from './mode';
 import { deleteRow, insertRow, tableStore, updateRow, useStore } from './store';
 import { storeLabels } from './stores';
-import { supabase } from './supabase';
 import type { Decision, Detection, Item, ItemDraft, Location, PhotoJob, Product } from './types';
 
-/** Photos waiting for the AI or for your review. */
+/** Photos waiting for your review. */
 export const jobsStore = tableStore<PhotoJob>({
   table: 'photo_jobs',
   demoKey: DEMO_KEYS.photo_jobs,
   sort: (a, b) => a.created_at.localeCompare(b.created_at),
 });
 
-/** Upload one photo into the AI inbox. */
+const blank = (): Detection => ({
+  name_pt: '', brand: null, quantity: null, location: 'fridge', shelf_life_days: null, confidence: 0, candidates: [],
+});
+
+/**
+ * Upload one photo into the Review inbox. There is no AI: in Review you say what is in it (search a
+ * supermarket product, scan its barcode, or match it to an item you already created).
+ */
 export async function queuePhoto(localUri: string) {
   const photo_path = await uploadPhoto(localUri, 'inbox');
+  const job = { photo_path, status: 'ready', decisions: [], detections: [blank()] } as Partial<PhotoJob>;
   if (isDemo()) {
-    // No AI in demo mode: the photo goes straight to Review, where you type what it is.
-    const job: PhotoJob = {
-      id: newId(), photo_path, status: 'ready', decisions: [], error: null, cost_usd: 0, created_at: new Date().toISOString(),
-      detections: [{ name_pt: '', brand: null, quantity: null, location: 'fridge', shelf_life_days: null, confidence: 0, candidates: [] }],
-    };
-    await writeDemo(DEMO_KEYS.photo_jobs, [...(await readDemo<PhotoJob[]>(DEMO_KEYS.photo_jobs, [])), job]);
-    jobsStore.upsertLocal(job);
+    const row = { ...job, id: newId(), error: null, cost_usd: 0, created_at: new Date().toISOString() } as PhotoJob;
+    await writeDemo(DEMO_KEYS.photo_jobs, [...(await readDemo<PhotoJob[]>(DEMO_KEYS.photo_jobs, [])), row]);
+    jobsStore.upsertLocal(row);
     return;
   }
-  await insertRow(jobsStore, { photo_path } as Partial<PhotoJob>);
+  await insertRow(jobsStore, job);
 }
 
-/** Wake the background worker (it returns immediately and keeps processing on the server). */
-export async function kickWorker() {
-  if (isDemo()) return;
-  const { error } = await supabase.functions.invoke('process-photos', { body: {} });
-  if (error) throw error;
-}
-
-export async function retryJob(job: PhotoJob) {
-  if (isDemo()) return;
-  await supabase.from('photo_jobs').update({ status: 'pending', error: null, attempts: 0 }).eq('id', job.id);
-  await kickWorker();
+/** One photo can show several foods: add another one to name. */
+export async function addFoodToPhoto(job: PhotoJob) {
+  const current = jobsStore.rows().find((j) => j.id === job.id) ?? job;
+  await updateRow(jobsStore, current.id, { detections: [...(current.detections ?? []), blank()] });
 }
 
 /** Fields that tie an item to a real supermarket product (Open Food Facts). */
@@ -56,7 +52,7 @@ export function productFields(product: Product): Partial<ItemDraft> {
   };
 }
 
-/** Turn a detection (+ the chosen supermarket product, or none) into a new item. */
+/** Turn a photo's food (+ the chosen supermarket product, or none) into a new item. */
 export async function acceptDetection(job: PhotoJob, index: number, product: Product | null, typedName?: string, location?: Location) {
   const d = job.detections![index];
   const item = await addItem({
@@ -114,12 +110,7 @@ async function decide(job: PhotoJob, index: number, decision: Decision) {
   }
 }
 
-export function bestCandidate(d: Detection) {
-  const top = d.candidates[0];
-  return top && top.match >= 0.55 ? top : null;
-}
-
-/** Live inbox of AI jobs. */
+/** Live inbox of photos waiting to be named. */
 export function useJobs() {
   const { rows, loading } = useStore(jobsStore);
   return { jobs: rows, loading, reload: jobsStore.refresh };
