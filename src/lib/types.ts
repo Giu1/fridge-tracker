@@ -93,3 +93,28 @@ export interface PhotoJob {
   cost_usd: number | null;
   created_at: string;
 }
+
+/** A product page of an item at one supermarket, with everything the app could read from it. */
+export interface ProductLink {
+  id: string;
+  item_id: string;
+  /** store key from PT_STORES ('continente', 'lidl'…) */
+  store: string;
+  url: string;
+  status: 'pending' | 'ok' | 'failed';
+  error: string | null;
+  name: string | null;
+  brand: string | null;
+  ean: string | null;
+  price: number | null;
+  currency: string | null;
+  unit_price: string | null;
+  quantity: string | null;
+  image_url: string | null;
+  /** all extracted fields (see supabase/functions/fetch-product/extract.ts ProductData) */
+  data: import('../../supabase/functions/fetch-product/extract').ProductData | null;
+  fetched_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}

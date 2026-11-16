@@ -2,7 +2,7 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { NutriScore } from '../../components/NutriScore';
 import { Photo } from '../../components/Photo';
-import { StoreDots } from '../../components/StoreChips';
+import { ShopLinks } from '../../components/ShopLinks';
 import { Button, Card, Chips, Label, Page } from '../../components/ui';
 import { confirmAsk, notify } from '../../lib/dialog';
 import { expiryLabel } from '../../lib/expiry';
@@ -10,7 +10,6 @@ import { deleteItem, updateItem, useItem } from '../../lib/items';
 import { placeLabel, usePlaces } from '../../lib/places';
 import { recipesUsing, useRecipes } from '../../lib/recipes';
 import { useSession } from '../../lib/session';
-import { storesFromLabels } from '../../lib/stores';
 import { useTheme } from '../../lib/theme';
 
 export default function ItemDetail() {
@@ -91,12 +90,7 @@ export default function ItemDetail() {
           {row('Added', `${new Date(item.created_at).toLocaleDateString('pt-PT')}${item.added_by === session?.user.id ? ' by you' : ''}`)}
         </Card>
 
-        {item.stores ? (
-          <Card style={{ gap: 4 }}>
-            <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600' }}>SOLD AT</Text>
-            <StoreDots stores={storesFromLabels(item.stores)} labels size={26} />
-          </Card>
-        ) : null}
+        <ShopLinks item={item} />
 
         {item.notes ? <Card><Text style={{ color: t.text }}>{item.notes}</Text></Card> : null}
 

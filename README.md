@@ -13,6 +13,13 @@ for the other. Both see the same food, places and recipes, live.
 - **Supermarket products with Nutri-Score.** Matches come from Open Food Facts (Portugal), with Nutri-Score, NOVA group,
   kcal and barcode. The real logos of Continente, Pingo Doce, Lidl, Auchan, Intermarché, Mercadona, Minipreço and Aldi
   appear on products, filters and search results.
+- **Supermarket product pages.** Each item has a **Shops** card: tap a chain to open that product there (its saved
+  page, or a search for the item on the shop's site), and paste product links (one per chain). The app then reads the
+  page and stores everything it publishes in `product_links`: name, brand, price, unit price, size, EAN, shop
+  reference, image, availability, ingredients, allergens, nutrition, origin, storage, category, plus Nutri-Score/NOVA
+  from Open Food Facts by EAN. "Fill in item details" copies what's missing onto the item. No AI: it only parses the
+  page's own structured data (schema.org JSON-LD, microdata, meta tags) and labelled text. Long-press a supermarket
+  filter chip, or use Settings → Supermarkets, to open a shop's website.
 - **Fuzzy search while typing.** When you add an item by hand, typing `iogurt grgo` still finds "Iogurte Grego". Products
   from the supermarkets you pick are listed first, and you can also scan a barcode.
 - **Opens instantly.** Each device keeps a copy of the food, places, recipes and photo links (SQLite on Android, browser
@@ -82,6 +89,22 @@ The APK ends up in `android/app/build/outputs/apk/release/app-release.apk`. Copy
 
 The default build is signed with a debug key, which is fine for personal use. Keep the same machine/`android` folder so
 updates install over the old version.
+
+### 4. Product links (server function for the web app)
+The Android app reads shop pages straight from the phone. Browsers are not allowed to read other sites' pages, so the
+web app asks a small Supabase Edge Function, `fetch-product`, which runs the same parsing code. Deploy it once
+(free tier is fine):
+```bash
+npx supabase login
+npx supabase functions deploy fetch-product --no-verify-jwt --project-ref <your-project-ref>
+```
+`<your-project-ref>` is the `<ref>` in `https://<ref>.supabase.co`. `--no-verify-jwt` is intentional: the function
+checks the caller itself (only the two allowed accounts) and only ever contacts the supermarkets' own sites and
+Open Food Facts. It needs no secrets. Without it, links are still saved on the web; only the details are not read
+(the phone fills them in with **Read again**).
+
+Which shops work depends on what each site publishes and whether it lets a non-browser read it; some answer
+automated requests with a bot check. When a page cannot be read the link is still saved and opens normally.
 
 ### Free-tier notes
 - A Free project **pauses after 7 days with no activity**. Daily use keeps it awake; if it pauses, press *Restore* in the

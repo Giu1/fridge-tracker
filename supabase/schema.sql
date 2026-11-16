@@ -156,6 +156,42 @@ create table if not exists public.recipes (
 drop trigger if exists recipes_touch on public.recipes;
 create trigger recipes_touch before update on public.recipes for each row execute function public.touch_updated_at();
 
+-- 3c. Product pages of items at each supermarket, with the data read from them (no AI) ----------
+-- One link per item per shop. The app reads the page (schema.org data, meta tags, labelled text, then Open Food Facts
+-- by EAN) and stores the main fields as columns and everything it found in `data`.
+create table if not exists public.product_links (
+  id          uuid primary key default gen_random_uuid(),
+  item_id     uuid not null references public.items(id) on delete cascade,
+  store       text not null check (store in ('continente','pingo-doce','lidl','auchan','intermarche','mercadona','minipreco','aldi','el-corte-ingles')),
+  url         text not null check (url ~* '^https://' and length(url) <= 2000),
+  status      text not null default 'pending' check (status in ('pending','ok','failed')),
+  error       text check (error is null or length(error) <= 1000),
+  name        text,
+  brand       text,
+  ean         text,
+  price       numeric,
+  currency    text,
+  unit_price  text,
+  quantity    text,
+  image_url   text,
+  data        jsonb check (data is null or (jsonb_typeof(data) = 'object' and pg_column_size(data) < 200000)),
+  fetched_at  timestamptz,
+  created_by  uuid default auth.uid() references auth.users(id) on delete set null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (item_id, store)
+);
+create index if not exists product_links_ean_idx on public.product_links (ean);
+drop trigger if exists product_links_touch on public.product_links;
+create trigger product_links_touch before update on public.product_links for each row execute function public.touch_updated_at();
+alter table public.product_links enable row level security;
+drop policy if exists "allowed users manage product links" on public.product_links;
+create policy "allowed users manage product links" on public.product_links
+  for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
+alter table public.product_links replica identity full;
+do $$ begin alter publication supabase_realtime add table public.product_links;
+exception when duplicate_object then null; end $$;
+
 -- 4. Row level security: only the two allowed accounts, nothing for anyone else ---------
 alter table public.locations     enable row level security;
 alter table public.recipes       enable row level security;

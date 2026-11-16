@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, ScrollView, Text, View } from 'react-native';
 import { confirmAsk, notify } from '../lib/dialog';
+import { ShopShortcuts } from '../components/StoreChips';
 import { Button, Card, Field, Label, Page } from '../components/ui';
 import { resetDemo } from '../lib/demo';
 import { productCount } from '../lib/localdb';
@@ -114,6 +115,12 @@ export default function Settings() {
           <Label>Places</Label>
           <Text style={{ color: t.text }}>Fridge, Freezer, Emergency supplies and any you add. Shared by both accounts.</Text>
           <Button title="Manage places" kind="secondary" onPress={() => router.push('/places')} />
+        </Card>
+
+        <Card style={{ gap: 10 }}>
+          <Label>Supermarkets</Label>
+          <Text style={{ color: t.muted }}>Open a shop's website. On an item, the Shops card opens that product there and keeps its product links.</Text>
+          <ShopShortcuts />
         </Card>
 
         <Card style={{ gap: 6 }}>
