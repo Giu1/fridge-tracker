@@ -1,7 +1,7 @@
 /**
  * Local SQLite database on each phone.
  *  - products: every Open Food Facts (Portugal) product reference you have seen or used,
- *    with Nutri-Score, so suggestions work offline and get better over time.
+ *    so suggestions work offline and get better over time.
  *  - kv: small settings plus the last synced copy of each shared table (see store.ts), so the app opens instantly
  *    and works with no signal.
  */
@@ -59,11 +59,9 @@ const rowToProduct = (r: ProductRow): Product & { use_count: number } => ({
   name: r.name,
   brand: r.brand,
   quantity: r.quantity,
-  nutriscore: (r.nutriscore as Product['nutriscore']) ?? null,
   nova_group: r.nova_group,
   kcal_100g: r.kcal_100g,
   image_url: r.image_url,
-  stores: r.stores ? r.stores.split(',') : [],
   categories: r.categories,
   use_count: r.use_count,
 });
@@ -80,8 +78,9 @@ export async function upsertProducts(products: Product[]) {
          ON CONFLICT(code) DO UPDATE SET name=excluded.name, brand=excluded.brand, quantity=excluded.quantity,
            nutriscore=excluded.nutriscore, nova_group=excluded.nova_group, kcal_100g=excluded.kcal_100g,
            image_url=excluded.image_url, stores=excluded.stores, categories=excluded.categories, updated_at=excluded.updated_at`,
-        p.code, p.name, p.brand, p.quantity, p.nutriscore, p.nova_group, p.kcal_100g, p.image_url,
-        p.stores.join(','), p.categories ?? null, now,
+        // nutriscore and stores columns are no longer used (kept so old local databases need no migration)
+        p.code, p.name, p.brand, p.quantity, null, p.nova_group, p.kcal_100g, p.image_url,
+        '', p.categories ?? null, now,
       );
     }
   });

@@ -204,6 +204,22 @@ export async function insertRow<T extends Row>(store: TableStore<T>, values: Par
   return data as T;
 }
 
+/** Insert many rows in one request. */
+export async function insertRows<T extends Row>(store: TableStore<T>, values: Partial<T>[]): Promise<T[]> {
+  if (!values.length) return [];
+  if (isDemo()) {
+    const now = new Date().toISOString();
+    const rows = values.map((v) => ({ id: newId(), created_at: now, updated_at: now, ...v }) as unknown as T);
+    await writeDemo(store.demoKey, [...(await demoRows(store)), ...rows]);
+    rows.forEach((r) => store.upsertLocal(r));
+    return rows;
+  }
+  const { data, error } = await supabase.from(store.table).insert(values as never).select();
+  if (error) throw error;
+  (data as T[]).forEach((r) => store.upsertLocal(r));
+  return data as T[];
+}
+
 export async function updateRow<T extends Row>(store: TableStore<T>, id: string, patch: Partial<T>): Promise<T> {
   if (isDemo()) {
     const rows = await demoRows(store);

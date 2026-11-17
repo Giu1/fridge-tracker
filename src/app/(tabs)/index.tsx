@@ -6,23 +6,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { CategoryChips } from '../../components/Category';
 import { ItemCard } from '../../components/ItemCard';
-import { StoreFilter } from '../../components/StoreChips';
 import { Chips, Tap, tick } from '../../components/ui';
 import { useCategories } from '../../lib/categories';
 import { useSession } from '../../lib/session';
 import { daysUntil, useItems } from '../../lib/items';
 import { placeLabel, usePlaces } from '../../lib/places';
-import { storesFromLabels } from '../../lib/stores';
 import { radius, useTheme } from '../../lib/theme';
 import type { Location } from '../../lib/types';
 import { useViewMode, type ViewMode } from '../../lib/viewMode';
 
 type Filter = 'all' | Location;
-type Sort = 'recent' | 'expiry' | 'health' | 'category';
+type Sort = 'recent' | 'expiry' | 'category';
 const SORTS: { key: Sort; label: string }[] = [
   { key: 'recent', label: 'Newest' },
   { key: 'expiry', label: 'Expiring' },
-  { key: 'health', label: 'Healthiest' },
   { key: 'category', label: 'Category' },
 ];
 const VIEWS: { key: ViewMode; icon: keyof typeof Feather.glyphMap; label: string }[] = [
@@ -46,9 +43,6 @@ export default function Inventory() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('recent');
-  const [storeSel, setStoreSel] = useState<string[]>([]);
-  const storesOf = useMemo(() => new Map(items.map((i) => [i.id, storesFromLabels(i.stores)])), [items]);
-  const presentStores = useMemo(() => [...new Set([...storesOf.values()].flat())], [storesOf]);
 
   const fuse = useMemo(
     () => new Fuse(items, { keys: ['name', 'brand', 'product_name', 'notes'], threshold: 0.4, ignoreDiacritics: true, ignoreLocation: true }),
@@ -59,15 +53,13 @@ export default function Inventory() {
     let list = query.trim() ? fuse.search(query).map((r) => r.item) : [...items];
     if (filter !== 'all') list = list.filter((i) => i.location === filter);
     if (catSel) list = list.filter((i) => i.category_id === catSel);
-    if (storeSel.length) list = list.filter((i) => (storesOf.get(i.id) ?? []).some((k) => storeSel.includes(k)));
     if (sort === 'expiry') list.sort((a, b) => (a.expires_on ?? '9999').localeCompare(b.expires_on ?? '9999'));
-    if (sort === 'health') list.sort((a, b) => (a.nutriscore ?? 'z').localeCompare(b.nutriscore ?? 'z'));
     if (sort === 'category') {
       const rank = (id: string | null | undefined) => (id ? catById.get(id)?.sort ?? 1e6 : 1e6);
       list.sort((a, b) => rank(a.category_id) - rank(b.category_id));
     }
     return list;
-  }, [items, fuse, query, filter, sort, storeSel, storesOf, catSel, catById]);
+  }, [items, fuse, query, filter, sort, catSel, catById]);
 
   const catCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -131,14 +123,6 @@ export default function Inventory() {
               </Tap>
             )}
 
-            {items.length > 0 && (
-              <Tap onPress={() => router.push('/recipe/find')} style={[styles.banner, { backgroundColor: t.accentSoft }]}>
-                <Text style={{ fontSize: 16 }}>🍲</Text>
-                <Text style={{ color: t.accent, fontWeight: '700', flex: 1 }}>Receitas Bimby com o que tens</Text>
-                <Feather name="chevron-right" size={16} color={t.accent} />
-              </Tap>
-            )}
-
             <View style={[styles.search, { backgroundColor: t.card, borderColor: t.border }]}>
               <Feather name="search" size={18} color={t.muted} />
               <TextInput
@@ -163,7 +147,6 @@ export default function Inventory() {
               allLabel="Any kind"
               trailing={{ label: categories.length ? '+ Category' : '+ Add categories', onPress: () => router.push('/categories') }}
             />
-            {presentStores.length > 0 && <StoreFilter selected={storeSel} onChange={setStoreSel} only={presentStores} />}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ gap: 8 }}>
               {SORTS.map((s) => {
@@ -210,7 +193,7 @@ export default function Inventory() {
             <View style={{ alignItems: 'center', marginTop: 60, gap: 10 }}>
               <Text style={{ fontSize: 48 }}>🥕</Text>
               <Text style={{ color: t.muted, fontSize: 16, textAlign: 'center' }}>
-                {items.length ? 'Nothing here.' : 'Nothing stored yet.\nAdd photos to fill it.'}
+                {items.length ? 'Nothing here.' : 'Nothing stored yet.\nSend a receipt or add photos to fill it.'}
               </Text>
             </View>
           )
@@ -223,7 +206,6 @@ export default function Inventory() {
                 mode={view}
                 category={item.category_id ? catById.get(item.category_id) : undefined}
                 placeText={placeLabel(byId, item.location)}
-                stores={storesOf.get(item.id) ?? []}
               />
             </View>
           ) : (

@@ -2,10 +2,9 @@ import { DEMO_KEYS, newId, readDemo, writeDemo } from './demo';
 import { addItem, isoInDays, removePhotoIfUnused, updateItem, uploadPhoto } from './items';
 import { isDemo } from './mode';
 import { deleteRow, insertRow, tableStore, updateRow, useStore } from './store';
-import { storeLabels } from './stores';
 import type { Decision, Detection, Item, ItemDraft, Location, PhotoJob, Product } from './types';
 
-/** Photos waiting for your review. */
+/** Photos waiting to be named. */
 export const jobsStore = tableStore<PhotoJob>({
   table: 'photo_jobs',
   demoKey: DEMO_KEYS.photo_jobs,
@@ -17,7 +16,7 @@ const blank = (): Detection => ({
 });
 
 /**
- * Upload one photo into the Review inbox. There is no AI: in Review you say what is in it (search a
+ * Upload one photo into the photo inbox. There is no AI: in the inbox you say what is in it (search a
  * supermarket product, scan its barcode, or match it to an item you already created).
  */
 export async function queuePhoto(localUri: string) {
@@ -44,8 +43,6 @@ export function productFields(product: Product): Partial<ItemDraft> {
     barcode: product.code || null,
     brand: product.brand,
     product_name: product.name,
-    stores: product.stores.length ? storeLabels(product.stores) : null,
-    nutriscore: product.nutriscore,
     nova_group: product.nova_group,
     kcal_100g: product.kcal_100g,
     off_image_url: product.image_url,
@@ -57,15 +54,13 @@ export async function acceptDetection(job: PhotoJob, index: number, product: Pro
   const d = job.detections![index];
   const item = await addItem({
     name: product ? product.name : typedName?.trim() || d.name_pt || 'Food',
-    quantity: product?.quantity ?? d.quantity,
+    amount: 1,
     location: location ?? d.location,
     expires_on: d.shelf_life_days != null ? isoInDays(d.shelf_life_days) : null,
     photo_path: job.photo_path,
     barcode: null,
     brand: d.brand,
     product_name: null,
-    stores: null,
-    nutriscore: null,
     nova_group: null,
     kcal_100g: null,
     off_image_url: null,

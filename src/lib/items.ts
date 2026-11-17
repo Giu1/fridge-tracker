@@ -1,3 +1,4 @@
+import Fuse from 'fuse.js';
 import { prepareImage, readBytes } from './files';
 import { DEMO_KEYS, demoPhotoUrls, putDemoPhoto, readDemo, removeDemoPhoto } from './demo';
 import { kvGet, kvSet, markProductUsed } from './localdb';
@@ -86,16 +87,24 @@ export function clearPhotoUrls() {
 /** Load saved signed links early (called at start-up). */
 export const warmPhotoUrls = () => loadUrlCache();
 
-/** Delete a photo only when no item still points at it (one photo can hold several foods). */
+/**
+ * Delete a photo only when nothing points at it any more: no item (one photo can hold several foods), no receipt line
+ * being checked, and no remembered name (photos items once had stay, so later receipts can suggest them).
+ */
 export async function removePhotoIfUnused(path: string | null) {
   if (!path) return;
   if (isDemo()) {
     const items = await readDemo<Item[]>(DEMO_KEYS.items, []);
-    if (!items.some((i) => i.photo_path === path)) await removeDemoPhoto(path);
+    const lines = await readDemo<{ photo_path: string | null }[]>(DEMO_KEYS.receipt_items, []);
+    if (!items.some((i) => i.photo_path === path) && !lines.some((l) => l.photo_path === path)) await removeDemoPhoto(path);
     return;
   }
-  const { count } = await supabase.from('items').select('id', { count: 'exact', head: true }).eq('photo_path', path);
-  if (!count) await supabase.storage.from(PHOTO_BUCKET).remove([path]);
+  for (const table of ['items', 'receipt_items', 'name_photos']) {
+    const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true }).eq('photo_path', path);
+    if (error && table !== 'items') continue; // table not created yet (schema not re-run): ignore it
+    if (error || count) return;
+  }
+  await supabase.storage.from(PHOTO_BUCKET).remove([path]);
 }
 
 /** The shared household inventory (fridge, freezer, emergency supplies and any other place). */
@@ -135,6 +144,17 @@ export function useItems() {
 export function useItem(id: string | undefined) {
   const { items, loading } = useItems();
   return { item: id ? items.find((i) => i.id === id) ?? null : null, loading };
+}
+
+/** Fuzzy search over stored items (typos and missing accents still match). */
+export const itemFuse = (items: Item[]) =>
+  new Fuse(items, { keys: ['name', 'product_name'], threshold: 0.35, includeScore: true, ignoreDiacritics: true, ignoreLocation: true });
+
+/** "2" → 2, "", "abc" or negative → fallback. Amounts are whole numbers. */
+export function toAmount(v: unknown, fallback = 1) {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(99999, Math.round(n));
 }
 
 export function daysUntil(date: string | null) {
