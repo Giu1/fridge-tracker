@@ -1,4 +1,3 @@
-export type NutriScore = 'a' | 'b' | 'c' | 'd' | 'e';
 /** Id of a place (row in `locations`). The three defaults are 'fridge', 'freezer' and 'emergency'. */
 export type Location = string;
 
@@ -21,32 +20,11 @@ export interface Category {
   created_at: string;
 }
 
-export interface RecipeIngredient {
-  name: string;
-  /** the stored item this ingredient was linked to (may have been used up since) */
-  item_id: string | null;
-}
-
-/** A Cookidoo (Bimby) recipe you saved, with its ingredients linked to stored items. */
-export interface Recipe {
-  id: string;
-  title: string;
-  url: string | null;
-  notes: string | null;
-  ingredients: RecipeIngredient[];
-  /** on this week's menu */
-  planned: boolean;
-  times_cooked: number;
-  last_cooked_on: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface Item {
   id: string;
   name: string;
-  quantity: string | null;
+  /** how many (whole number) */
+  amount: number;
   location: Location;
   /** null = no category (also after its category was removed) */
   category_id?: string | null;
@@ -55,8 +33,6 @@ export interface Item {
   barcode: string | null;
   brand: string | null;
   product_name: string | null;
-  stores: string | null;
-  nutriscore: NutriScore | null;
   nova_group: number | null;
   kcal_100g: number | null;
   off_image_url: string | null;
@@ -73,16 +49,15 @@ export interface Product {
   code: string;
   name: string;
   brand: string | null;
+  /** pack size from Open Food Facts ("500 g"), not how many you have */
   quantity: string | null;
-  nutriscore: NutriScore | null;
   nova_group: number | null;
   kcal_100g: number | null;
   image_url: string | null;
-  stores: string[];
   categories?: string | null;
 }
 
-/** One food in an uploaded photo, waiting for you to say what it is (no AI: you name it in Review). */
+/** One food in an uploaded photo, waiting for you to say what it is (no AI: you name it in the photo inbox). */
 export interface Detection {
   name_pt: string;
   brand: string | null;
@@ -106,27 +81,41 @@ export interface PhotoJob {
   created_at: string;
 }
 
-/** A product page of an item at one supermarket, with everything the app could read from it. */
-export interface ProductLink {
+/** A receipt you sent (photo or PDF), or a list imported on its own (no file). */
+export interface Receipt {
   id: string;
-  item_id: string;
-  /** store key from PT_STORES ('continente', 'lidl'…) */
-  store: string;
-  url: string;
-  status: 'pending' | 'ok' | 'failed';
-  error: string | null;
-  name: string | null;
-  brand: string | null;
-  ean: string | null;
-  price: number | null;
-  currency: string | null;
-  unit_price: string | null;
-  quantity: string | null;
-  image_url: string | null;
-  /** all extracted fields (see supabase/functions/fetch-product/extract.ts ProductData) */
-  data: import('../../supabase/functions/fetch-product/extract').ProductData | null;
-  fetched_at: string | null;
+  title: string | null;
+  file_path: string | null;
+  file_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  /** sent = waiting for its list, drafts = list imported and being checked, done = items added */
+  status: 'sent' | 'drafts' | 'done';
+  item_count: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** One line of an imported receipt list, checked and corrected on the bulk edit page before it becomes an item. */
+export interface ReceiptLine {
+  id: string;
+  receipt_id: string;
+  sort: number;
+  name: string;
+  amount: number;
+  location: Location | null;
+  category_id: string | null;
+  expires_on: string | null;
+  notes: string | null;
+  photo_path: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A remembered photo that fuzzy-matches a name. */
+export interface PhotoMatch {
+  name: string;
+  photo_path: string;
+  score: number;
 }

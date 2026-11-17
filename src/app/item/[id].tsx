@@ -1,16 +1,17 @@
+import { Feather } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { CategoryChips, CategoryPill } from '../../components/Category';
-import { NutriScore } from '../../components/NutriScore';
 import { Photo } from '../../components/Photo';
-import { ShopLinks } from '../../components/ShopLinks';
+import { AmountStepper } from '../../components/AmountStepper';
 import { Button, Card, Chips, Label, Page } from '../../components/ui';
 import { useCategories } from '../../lib/categories';
 import { confirmAsk, notify } from '../../lib/dialog';
 import { expiryLabel } from '../../lib/expiry';
 import { deleteItem, updateItem, useItem } from '../../lib/items';
 import { placeLabel, usePlaces } from '../../lib/places';
-import { recipesUsing, useRecipes } from '../../lib/recipes';
 import { useSession } from '../../lib/session';
 import { useTheme } from '../../lib/theme';
 
@@ -20,11 +21,10 @@ export default function ItemDetail() {
   const { session } = useSession();
   const { item, loading } = useItem(id);
   const { places, byId } = usePlaces();
-  const { recipes } = useRecipes();
+  const [photoBusy, setPhotoBusy] = useState(false);
   const { categories, byId: catById } = useCategories();
 
   if (!item) return <Text style={{ color: t.muted, padding: 20 }}>{loading ? 'Loading…' : 'This item was removed.'}</Text>;
-  const usedIn = recipesUsing(item, recipes);
 
   const move = async (location: string) => {
     if (location === item.location) return;
@@ -41,6 +41,30 @@ export default function ItemDetail() {
       await updateItem(item, { category_id });
     } catch (e) {
       notify('Could not change category', (e as Error).message);
+    }
+  };
+
+  const setAmount = async (amount: number) => {
+    try {
+      await updateItem(item, { amount });
+    } catch (e) {
+      notify('Could not change the amount', (e as Error).message);
+    }
+  };
+
+  // A photo added here is also remembered for this name, so future receipts suggest it.
+  const addPhoto = async (fromLibrary: boolean) => {
+    const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], quality: 0.6, allowsEditing: true, aspect: [1, 1] };
+    if (!fromLibrary && !(await ImagePicker.requestCameraPermissionsAsync()).granted) return notify('Camera permission is needed.');
+    const res = fromLibrary ? await ImagePicker.launchImageLibraryAsync(opts) : await ImagePicker.launchCameraAsync(opts);
+    if (res.canceled || !res.assets[0]) return;
+    setPhotoBusy(true);
+    try {
+      await updateItem(item, {}, res.assets[0].uri);
+    } catch (e) {
+      notify('Could not save the photo', (e as Error).message);
+    } finally {
+      setPhotoBusy(false);
     }
   };
 
@@ -67,6 +91,12 @@ export default function ItemDetail() {
       <Stack.Screen options={{ title: '' }} />
       <Page>
       <Photo path={item.photo_path} fallbackUrl={item.off_image_url} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 22 }} label={item.name} color={category?.color} />
+      {!item.photo_path && (
+        <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 12 }}>
+          <Button title="Take photo" icon={<Feather name="camera" size={16} color={t.accentText} />} onPress={() => addPhoto(false)} busy={photoBusy} style={{ flex: 1 }} />
+          <Button title="From gallery" kind="secondary" onPress={() => addPhoto(true)} disabled={photoBusy} style={{ flex: 1 }} />
+        </View>
+      )}
       <View style={{ padding: 16, gap: 14 }}>
         <View style={{ gap: 4 }}>
           <Text style={{ color: t.text, fontSize: 26, fontWeight: '800' }}>{item.name}</Text>
@@ -98,13 +128,12 @@ export default function ItemDetail() {
           />
         </View>
 
-        <Card style={{ gap: 6 }}>
-          <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600' }}>NUTRI-SCORE</Text>
-          <NutriScore grade={item.nutriscore} full />
-        </Card>
+        <View style={{ gap: 6 }}>
+          <Label>Amount</Label>
+          <AmountStepper value={item.amount} onChange={setAmount} />
+        </View>
 
         <Card>
-          {row('Quantity', item.quantity)}
           {row('Expires', item.expires_on)}
           {row('Brand', item.brand)}
           {row('Product', item.product_name !== item.name ? item.product_name : null)}
@@ -114,8 +143,6 @@ export default function ItemDetail() {
           {row('Added', `${new Date(item.created_at).toLocaleDateString('pt-PT')}${item.added_by === session?.user.id ? ' by you' : ''}`)}
         </Card>
 
-        <ShopLinks item={item} />
-
         {item.notes ? <Card><Text style={{ color: t.text }}>{item.notes}</Text></Card> : null}
 
         {item.barcode ? (
@@ -123,27 +150,6 @@ export default function ItemDetail() {
             <Text style={{ color: t.accent, fontWeight: '600' }}>See full product on Open Food Facts →</Text>
           </Pressable>
         ) : null}
-
-        <Card style={{ gap: 8 }}>
-          <Label>Bimby recipes</Label>
-          {usedIn.map((r) => (
-            <Pressable key={r.id} onPress={() => router.push({ pathname: '/recipe/[id]', params: { id: r.id } })}>
-              <Text style={{ color: t.text, fontWeight: '600' }}>
-                🍲 {r.title}
-                {r.planned ? <Text style={{ color: t.accent }}>  · on the menu</Text> : null}
-              </Text>
-            </Pressable>
-          ))}
-          {!usedIn.length && <Text style={{ color: t.muted }}>None of your saved recipes use this yet.</Text>}
-          <View style={{ flexDirection: 'row', gap: 16, flexWrap: 'wrap', marginTop: 4 }}>
-            <Pressable onPress={() => router.push({ pathname: '/recipe/find', params: { with: item.id } })}>
-              <Text style={{ color: t.accent, fontWeight: '600' }}>Find on Cookidoo →</Text>
-            </Pressable>
-            <Pressable onPress={() => router.push({ pathname: '/recipe/edit', params: { items: item.id } })}>
-              <Text style={{ color: t.accent, fontWeight: '600' }}>Save a recipe with it →</Text>
-            </Pressable>
-          </View>
-        </Card>
 
         <Button title="Edit" kind="secondary" onPress={() => router.push({ pathname: '/add', params: { id: item.id } })} />
         <Button title="Used it up / remove" kind="danger" onPress={remove} />

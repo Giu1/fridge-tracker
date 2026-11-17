@@ -6,17 +6,14 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollVie
 import { BarcodeModal } from '../components/BarcodeModal';
 import { CategoryChips } from '../components/Category';
 import { DateField } from '../components/DateField';
-import { NutriScore } from '../components/NutriScore';
 import { Photo } from '../components/Photo';
-import { StoreDots, StoreFilter } from '../components/StoreChips';
+import { AmountStepper } from '../components/AmountStepper';
 import { Button, Card, Chips, Field } from '../components/ui';
 import { useCategories } from '../lib/categories';
 import { addItem, itemsStore, updateItem } from '../lib/items';
 import { parseDateInput } from '../lib/dates';
-import { kvGet, kvSet } from '../lib/localdb';
 import { placeLabel, usePlaces } from '../lib/places';
 import { localSuggestions, lookupBarcode, rankSuggestions, searchRemote, type Suggestion } from '../lib/products';
-import { storeLabels } from '../lib/stores';
 import { notify } from '../lib/dialog';
 import { useTheme } from '../lib/theme';
 import type { Item, Location, Product } from '../lib/types';
@@ -31,29 +28,19 @@ export default function AddOrEdit() {
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState('');
+  const [amount, setAmount] = useState(1);
   const [location, setLocation] = useState<Location>(place || 'fridge');
   const [category, setCategory] = useState<string | null>(null);
   const [expires, setExpires] = useState('');
   const [notes, setNotes] = useState('');
   const [product, setProduct] = useState<Product | null>(null);
 
-  const [stores, setStores] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
-
-  // Remember which supermarkets you shop at.
-  useEffect(() => {
-    kvGet('stores').then((v) => v && setStores(JSON.parse(v)));
-  }, []);
-  const changeStores = (s: string[]) => {
-    setStores(s);
-    kvSet('stores', JSON.stringify(s));
-  };
 
   // Load the item when editing.
   useEffect(() => {
@@ -63,16 +50,15 @@ export default function AddOrEdit() {
       if (!it) return false;
       setEditing(it);
       setName(it.name);
-      setQuantity(it.quantity ?? '');
+      setAmount(it.amount ?? 1);
       setLocation(it.location);
       setCategory(it.category_id ?? null);
       setExpires(it.expires_on ?? '');
       setNotes(it.notes ?? '');
-      if (it.barcode || it.nutriscore) {
+      if (it.barcode) {
         setProduct({
-          code: it.barcode ?? '', name: it.product_name ?? it.name, brand: it.brand, quantity: it.quantity,
-          nutriscore: it.nutriscore, nova_group: it.nova_group, kcal_100g: it.kcal_100g, image_url: it.off_image_url,
-          stores: [], categories: null,
+          code: it.barcode, name: it.product_name ?? it.name, brand: it.brand, quantity: null,
+          nova_group: it.nova_group, kcal_100g: it.kcal_100g, image_url: it.off_image_url, categories: null,
         });
       }
       return true;
@@ -93,7 +79,7 @@ export default function AddOrEdit() {
       return;
     }
     let alive = true;
-    localSuggestions(q, stores).then((s) => alive && setSuggestions(s));
+    localSuggestions(q).then((s) => alive && setSuggestions(s));
     const timer = setTimeout(async () => {
       abortRef.current?.abort();
       const ctrl = new AbortController();
@@ -101,8 +87,8 @@ export default function AddOrEdit() {
       setSearching(true);
       try {
         const remote = await searchRemote(q, ctrl.signal);
-        const local = await localSuggestions(q, stores);
-        if (alive) setSuggestions(rankSuggestions(q, [...local, ...remote], stores));
+        const local = await localSuggestions(q);
+        if (alive) setSuggestions(rankSuggestions(q, [...local, ...remote]));
       } catch {
         // offline or aborted: local suggestions stay
       } finally {
@@ -113,12 +99,11 @@ export default function AddOrEdit() {
       alive = false;
       clearTimeout(timer);
     };
-  }, [name, stores, showSuggestions]);
+  }, [name, showSuggestions]);
 
   const pick = (p: Product) => {
     setProduct(p);
     setName(p.brand && !p.name.toLowerCase().includes(p.brand.toLowerCase()) ? `${p.name} ${p.brand}` : p.name);
-    if (!quantity && p.quantity) setQuantity(p.quantity);
     setShowSuggestions(false);
   };
 
@@ -140,7 +125,7 @@ export default function AddOrEdit() {
       if (p) pick(p);
       else {
         notify('Not found', `Barcode ${code} is not in Open Food Facts yet. Type the name instead.`);
-        setProduct({ code, name: name || code, brand: null, quantity: null, nutriscore: null, nova_group: null, kcal_100g: null, image_url: null, stores: [], categories: null });
+        setProduct({ code, name: name || code, brand: null, quantity: null, nova_group: null, kcal_100g: null, image_url: null, categories: null });
       }
     } catch {
       notify('Offline', 'Could not look up the barcode right now.');
@@ -156,7 +141,7 @@ export default function AddOrEdit() {
     setSaving(true);
     const draft = {
       name: name.trim(),
-      quantity: quantity.trim() || null,
+      amount,
       location,
       expires_on: exp ? exp.iso : null,
       notes: notes.trim() || null,
@@ -164,8 +149,6 @@ export default function AddOrEdit() {
       barcode: product?.code || null,
       brand: product?.brand ?? null,
       product_name: product?.name ?? null,
-      stores: product?.stores.length ? storeLabels(product.stores) : editing?.stores ?? null,
-      nutriscore: product?.nutriscore ?? null,
       nova_group: product?.nova_group ?? null,
       kcal_100g: product?.kcal_100g ?? null,
       off_image_url: product?.image_url ?? null,
@@ -220,13 +203,12 @@ export default function AddOrEdit() {
               <Text style={{ fontSize: 22 }}>▥</Text>
             </Pressable>
           </View>
-          <StoreFilter selected={stores} onChange={changeStores} />
 
           {showSuggestions && name.trim().length >= 2 && (
             <Card style={{ padding: 0, overflow: 'hidden' }}>
               <View style={[styles.sugHeader, { borderColor: t.border }]}>
                 <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600' }}>
-                  {stores.length ? `PRODUCTS AT ${storeLabels(stores).toUpperCase()} FIRST` : 'PRODUCTS SOLD IN PORTUGAL'}
+                  PRODUCTS SOLD IN PORTUGAL
                 </Text>
                 {searching ? <ActivityIndicator size="small" color={t.accent} /> : (
                   <Pressable onPress={() => setShowSuggestions(false)} hitSlop={10}><Text style={{ color: t.muted }}>Hide</Text></Pressable>
@@ -239,15 +221,13 @@ export default function AddOrEdit() {
                 <Pressable
                   key={s.code}
                   onPress={() => pick(s)}
-                  style={({ pressed }) => [styles.sugRow, { borderColor: t.border, backgroundColor: pressed ? t.chip : 'transparent', opacity: s.inStore ? 1 : 0.7 }]}
+                  style={({ pressed }) => [styles.sugRow, { borderColor: t.border, backgroundColor: pressed ? t.chip : 'transparent' }]}
                 >
                   {s.image_url ? <Image source={{ uri: s.image_url }} style={styles.sugImg} contentFit="contain" /> : <View style={[styles.sugImg, { backgroundColor: t.chip }]} />}
                   <View style={{ flex: 1 }}>
                     <Text numberOfLines={2} style={{ color: t.text, fontWeight: '600' }}>{s.name}</Text>
                     <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>{[s.brand, s.quantity].filter(Boolean).join(' · ')}</Text>
-                    <StoreDots stores={s.stores} />
                   </View>
-                  <NutriScore grade={s.nutriscore} />
                 </Pressable>
               ))}
             </Card>
@@ -265,12 +245,14 @@ export default function AddOrEdit() {
             <Text style={{ color: t.muted }}>
               {[product.brand, product.quantity, product.kcal_100g != null ? `${product.kcal_100g} kcal/100g` : null].filter(Boolean).join(' · ')}
             </Text>
-            <NutriScore grade={product.nutriscore} full />
             {product.code ? <Text style={{ color: t.muted, fontSize: 12 }}>Ref. {product.code}</Text> : null}
           </Card>
         )}
 
-        <Field label="Quantity" value={quantity} onChangeText={setQuantity} placeholder="e.g. 1 L, 4 units, half" />
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: t.muted, fontSize: 13, fontWeight: '600' }}>AMOUNT</Text>
+          <AmountStepper value={amount} onChange={setAmount} />
+        </View>
 
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.muted, fontSize: 13, fontWeight: '600' }}>WHERE</Text>

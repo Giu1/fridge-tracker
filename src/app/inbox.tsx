@@ -2,24 +2,21 @@ import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { NutriScore } from '../../components/NutriScore';
-import { Photo } from '../../components/Photo';
-import { StoreDots } from '../../components/StoreChips';
-import { BarcodeModal } from '../../components/BarcodeModal';
-import { ItemPicker } from '../../components/ItemPicker';
-import { Button, Card, Chips, tick } from '../../components/ui';
-import { acceptDetection, addFoodToPhoto, discardJob, linkDetectionToItem, rejectDetection, useJobs } from '../../lib/jobs';
-import { useItems } from '../../lib/items';
-import { placeLabel, usePlaces } from '../../lib/places';
-import { itemFuse } from '../../lib/recipes';
-import { notify } from '../../lib/dialog';
-import { localSuggestions, lookupBarcode, searchRemote, rankSuggestions } from '../../lib/products';
-import { radius, useTheme } from '../../lib/theme';
-import type { Detection, Item, PhotoJob, Product } from '../../lib/types';
+import { Photo } from '../components/Photo';
+import { BarcodeModal } from '../components/BarcodeModal';
+import { ItemPicker } from '../components/ItemPicker';
+import { Button, Card, Chips, tick } from '../components/ui';
+import { acceptDetection, addFoodToPhoto, discardJob, linkDetectionToItem, rejectDetection, useJobs } from '../lib/jobs';
+import { itemFuse, useItems } from '../lib/items';
+import { placeLabel, usePlaces } from '../lib/places';
+import { notify } from '../lib/dialog';
+import { localSuggestions, lookupBarcode, searchRemote, rankSuggestions } from '../lib/products';
+import { radius, useTheme } from '../lib/theme';
+import type { Detection, Item, PhotoJob, Product } from '../lib/types';
 
 type Choice = string; // product code, or 'none' = just the name you typed
 
-export default function Review() {
+export default function PhotoInbox() {
   const t = useTheme();
   const { jobs, loading } = useJobs();
   const [choice, setChoice] = useState<Record<string, Choice>>({});
@@ -71,10 +68,10 @@ export default function Review() {
       const toCandidates = (list: { score: number }[]) =>
         list.slice(0, 6).map((p) => ({ ...(p as unknown as Product), match: Math.max(0, 1 - p.score) }));
       setFound((m) => ({ ...m, [k]: [] }));
-      localSuggestions(q, []).then((l) => setFound((m) => ({ ...m, [k]: toCandidates(l) })));
+      localSuggestions(q).then((l) => setFound((m) => ({ ...m, [k]: toCandidates(l) })));
       try {
         const remote = await searchRemote(q);
-        setFound((m) => ({ ...m, [k]: toCandidates(rankSuggestions(q, remote, [])) }));
+        setFound((m) => ({ ...m, [k]: toCandidates(rankSuggestions(q, remote)) }));
       } catch {
         // offline: local results stay
       } finally {
@@ -143,7 +140,7 @@ export default function Review() {
         loading ? undefined : (
           <View style={{ alignItems: 'center', marginTop: 70, gap: 10 }}>
             <Feather name="inbox" size={44} color={t.muted} />
-            <Text style={{ color: t.muted, fontSize: 16, textAlign: 'center' }}>Nothing to review.{'\n'}Add photos and they will show up here.</Text>
+            <Text style={{ color: t.muted, fontSize: 16, textAlign: 'center' }}>No photos waiting.{'\n'}Add photos and they will show up here.</Text>
           </View>
         )
       }
@@ -207,9 +204,7 @@ export default function Review() {
                         <View style={{ flex: 1 }}>
                           <Text numberOfLines={2} style={{ color: t.text, fontWeight: '600' }}>{p.name}</Text>
                           <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>{[p.brand, p.quantity].filter(Boolean).join(' · ')}</Text>
-                          <StoreDots stores={p.stores} size={20} />
                         </View>
-                        <NutriScore grade={p.nutriscore} />
                         <Feather name={on ? 'check-circle' : 'circle'} size={20} color={on ? t.accent : t.border} />
                       </Pressable>
                     );
@@ -250,7 +245,7 @@ export default function Review() {
                           <View style={{ flex: 1 }}>
                             <Text numberOfLines={1} style={{ color: t.text, fontWeight: '600' }}>{it.name}</Text>
                             <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>
-                              {[placeLabel(byId, it.location), it.quantity, it.photo_path ? 'has a photo' : 'no photo yet'].filter(Boolean).join(' · ')}
+                              {[placeLabel(byId, it.location), `×${it.amount}`, it.photo_path ? 'has a photo' : 'no photo yet'].filter(Boolean).join(' · ')}
                             </Text>
                           </View>
                           <Feather name="link" size={18} color={t.accent} />

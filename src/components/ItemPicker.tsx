@@ -2,7 +2,7 @@ import { Feather } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { placeLabel, usePlaces } from '../lib/places';
-import { itemFuse } from '../lib/recipes';
+import { itemFuse } from '../lib/items';
 import { radius, useTheme } from '../lib/theme';
 import type { Item } from '../lib/types';
 
@@ -52,7 +52,7 @@ export function ItemPicker({ visible, items, initial, allowUnlink, onPick, onClo
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={{ color: t.text, fontWeight: '600' }}>{i.name}</Text>
                   <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>
-                    {[placeLabel(byId, i.location), i.quantity, i.expires_on ? `exp. ${i.expires_on}` : null].filter(Boolean).join(' · ')}
+                    {[placeLabel(byId, i.location), `×${i.amount}`, i.expires_on ? `exp. ${i.expires_on}` : null].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
               </Pressable>

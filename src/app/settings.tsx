@@ -3,7 +3,6 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, ScrollView, Text, View } from 'react-native';
 import { confirmAsk, notify } from '../lib/dialog';
-import { ShopShortcuts } from '../components/StoreChips';
 import { Button, Card, Field, Label, Page } from '../components/ui';
 import { resetDemo } from '../lib/demo';
 import { productCount } from '../lib/localdb';
@@ -80,7 +79,7 @@ export default function Settings() {
               title="Delete all demo data"
               kind="danger"
               onPress={async () => {
-                if (await confirmAsk('Delete all demo data?', 'Items, photos and pending reviews in this browser.', 'Delete')) await resetDemo();
+                if (await confirmAsk('Delete all demo data?', 'Items, photos, receipts and photos waiting to be named in this browser.', 'Delete')) await resetDemo();
               }}
             />
           </Card>
@@ -123,18 +122,12 @@ export default function Settings() {
           <Button title="Manage categories" kind="secondary" onPress={() => router.push('/categories')} />
         </Card>
 
-        <Card style={{ gap: 10 }}>
-          <Label>Supermarkets</Label>
-          <Text style={{ color: t.muted }}>Open a shop's website. On an item, the Shops card opens that product there and keeps its product links.</Text>
-          <ShopShortcuts />
-        </Card>
-
         <Card style={{ gap: 6 }}>
           <Label>This device</Label>
-          <Text style={{ color: t.muted }}>{count ?? '…'} supermarket products saved locally for quick suggestions. Your food, places and recipes are also kept on this
+          <Text style={{ color: t.muted }}>{count ?? '…'} supermarket products saved locally for quick suggestions. Your food, places and receipts are also kept on this
             device so the app opens instantly; signing out erases that copy.</Text>
           <Text style={{ color: t.muted, fontSize: 12, marginTop: 6 }}>
-            Product data and Nutri-Scores: Open Food Facts (openfoodfacts.org), Open Database License.
+            Product data: Open Food Facts (openfoodfacts.org), Open Database License.
           </Text>
         </Card>
 

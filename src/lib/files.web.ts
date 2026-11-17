@@ -17,3 +17,7 @@ export async function toDataUrl(uri: string) {
   const out = await ref.saveAsync({ compress: 0.6, format: SaveFormat.JPEG, base64: true });
   return `data:image/jpeg;base64,${out.base64}`;
 }
+
+export async function readText(uri: string): Promise<string> {
+  return (await fetch(uri)).text();
+}

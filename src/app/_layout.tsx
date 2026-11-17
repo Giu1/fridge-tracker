@@ -50,9 +50,9 @@ function Gate() {
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="places" options={{ title: 'Places' }} />
         <Stack.Screen name="categories" options={{ title: 'Categories' }} />
-        <Stack.Screen name="recipe/find" options={{ title: 'Receitas Bimby' }} />
-        <Stack.Screen name="recipe/edit" options={{ presentation: 'modal', title: 'Recipe' }} />
-        <Stack.Screen name="recipe/[id]" options={{ title: '' }} />
+        <Stack.Screen name="inbox" options={{ title: 'Name your photos' }} />
+        <Stack.Screen name="receipt/import" options={{ presentation: 'modal', title: 'Upload list' }} />
+        <Stack.Screen name="receipt/[id]" options={{ title: 'Check the list' }} />
       </Stack.Protected>
     </Stack>
   );

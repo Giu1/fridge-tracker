@@ -6,9 +6,7 @@ import { radius, useTheme, type Theme } from '../lib/theme';
 import type { Category, Item } from '../lib/types';
 import type { ViewMode } from '../lib/viewMode';
 import { CategoryPill } from './Category';
-import { NutriScore } from './NutriScore';
 import { Photo } from './Photo';
-import { StoreDots } from './StoreChips';
 import { Tap } from './ui';
 
 type Props = {
@@ -16,7 +14,6 @@ type Props = {
   mode: ViewMode;
   category?: Category;
   placeText: string;
-  stores: string[];
 };
 
 const open = (id: string) => router.push({ pathname: '/item/[id]', params: { id } });
@@ -34,9 +31,10 @@ function Expiry({ item, t, compact }: { item: Item; t: Theme; compact?: boolean 
 }
 
 /** One food on the home list, drawn for the chosen view (grid, list or compact). */
-export const ItemCard = memo(function ItemCard({ item, mode, category, placeText, stores }: Props) {
+export const ItemCard = memo(function ItemCard({ item, mode, category, placeText }: Props) {
   const t = useTheme();
-  const meta = [item.quantity, item.brand].filter(Boolean).join(' · ') || placeText;
+  const count = item.amount !== 1 ? `×${item.amount}` : null;
+  const meta = [count, item.brand].filter(Boolean).join(' · ') || placeText;
   const accent = category?.color ?? t.border;
 
   if (mode === 'compact') {
@@ -46,10 +44,9 @@ export const ItemCard = memo(function ItemCard({ item, mode, category, placeText
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ color: t.text, fontWeight: '600', fontSize: 15 }}>
             {item.name}
-            {item.quantity ? <Text style={{ color: t.muted, fontWeight: '400' }}>{`  ${item.quantity}`}</Text> : null}
+            {count ? <Text style={{ color: t.muted, fontWeight: '400' }}>{`  ${count}`}</Text> : null}
           </Text>
         </View>
-        <NutriScore grade={item.nutriscore} />
         <Expiry item={item} t={t} compact />
       </Tap>
     );
@@ -61,18 +58,12 @@ export const ItemCard = memo(function ItemCard({ item, mode, category, placeText
         <View style={[styles.strip, { backgroundColor: category?.color ?? 'transparent' }]} />
         <View>
           <Photo path={item.photo_path} fallbackUrl={item.off_image_url} style={styles.thumb} label={item.name} color={category?.color} />
-          {item.nutriscore ? (
-            <View style={styles.thumbBadge}>
-              <NutriScore grade={item.nutriscore} />
-            </View>
-          ) : null}
         </View>
         <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
           <Text numberOfLines={1} style={{ color: t.text, fontWeight: '700', fontSize: 16 }}>{item.name}</Text>
           <Text numberOfLines={1} style={{ color: t.muted, fontSize: 13 }}>{meta}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {category && <CategoryPill category={category} size="sm" />}
-            <StoreDots stores={stores} size={14} />
           </View>
         </View>
         <Expiry item={item} t={t} />
@@ -89,11 +80,6 @@ export const ItemCard = memo(function ItemCard({ item, mode, category, placeText
             <CategoryPill category={category} solid size="sm" />
           </View>
         )}
-        {item.nutriscore ? (
-          <View style={styles.photoTR}>
-            <NutriScore grade={item.nutriscore} />
-          </View>
-        ) : null}
       </View>
       <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 12, gap: 6 }}>
         <View style={{ gap: 2 }}>
@@ -102,7 +88,6 @@ export const ItemCard = memo(function ItemCard({ item, mode, category, placeText
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, minHeight: 22 }}>
           <Expiry item={item} t={t} compact />
-          <StoreDots stores={stores.slice(0, 3)} size={14} />
         </View>
       </View>
       <View style={[styles.underline, { backgroundColor: category?.color ?? 'transparent' }]} />
@@ -113,8 +98,7 @@ export const ItemCard = memo(function ItemCard({ item, mode, category, placeText
 const styles = StyleSheet.create({
   card: { flex: 1, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   photo: { width: '100%', aspectRatio: 1 },
-  photoTL: { position: 'absolute', top: 8, left: 8, right: 40 },
-  photoTR: { position: 'absolute', top: 8, right: 8 },
+  photoTL: { position: 'absolute', top: 8, left: 8, right: 8 },
   underline: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 3 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingLeft: 14, paddingRight: 12,
@@ -123,7 +107,6 @@ const styles = StyleSheet.create({
   bar: { width: 4, height: 28, borderRadius: 2 },
   strip: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
   thumb: { width: 60, height: 60, borderRadius: 12 },
-  thumbBadge: { position: 'absolute', bottom: -4, right: -4, transform: [{ scale: 0.85 }] },
   compact: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingLeft: 10, paddingRight: 12, borderRadius: radius.sm },
   exp: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, flexShrink: 0 },
 });

@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, Page, Tap } from '../../components/ui';
-import { queuePhoto } from '../../lib/jobs';
+import { queuePhoto, useJobs } from '../../lib/jobs';
 import { useSession } from '../../lib/session';
 import { notify } from '../../lib/dialog';
 import { radius, useTheme } from '../../lib/theme';
@@ -18,6 +18,7 @@ export default function UploadPhotos() {
   const { demo } = useSession();
   const [uploads, setUploads] = useState<Upload[]>([]);
   const running = useRef(false);
+  const { jobs } = useJobs();
 
   const setState = (uri: string, state: Upload['state']) =>
     setUploads((list) => list.map((u) => (u.uri === uri ? { ...u, state } : u)));
@@ -70,8 +71,8 @@ export default function UploadPhotos() {
       <Page style={{ gap: 16 }}>
         <Text style={{ color: t.muted, fontSize: 15, lineHeight: 21 }}>
           {demo ? 'Demo mode: photos are kept in this browser. ' : ''}
-          Snap or pick as many photos as you like. Then, in Review, say what each one is: search the supermarket product,
-          scan its barcode, or match the photo to an item you already created.
+          Snap or pick as many photos as you like. Then say what each one is: search the product, scan its barcode, or
+          match the photo to an item you already created.
         </Text>
 
         <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -89,7 +90,7 @@ export default function UploadPhotos() {
           <Card style={{ gap: 12 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: t.text, fontWeight: '700', fontSize: 16 }}>
-                {busy ? `Uploading ${done}/${uploads.length}…` : `${done} photo${done === 1 ? '' : 's'} ready to review`}
+                {busy ? `Uploading ${done}/${uploads.length}…` : `${done} photo${done === 1 ? '' : 's'} ready to name`}
               </Text>
               {failed > 0 && <Text style={{ color: t.danger, fontWeight: '600' }}>{failed} failed</Text>}
             </View>
@@ -107,11 +108,20 @@ export default function UploadPhotos() {
             </View>
             {!busy && (
               <View style={{ flexDirection: 'row', gap: 10 }}>
-                <Button title="Go to Review" onPress={() => router.navigate('/review')} style={{ flex: 1 }} />
+                <Button title="Name them" onPress={() => router.push('/inbox')} style={{ flex: 1 }} />
                 <Button title="Clear" kind="secondary" onPress={() => setUploads([])} />
               </View>
             )}
           </Card>
+        )}
+
+        {jobs.length > 0 && !busy && (
+          <Button
+            title={`${jobs.length} photo${jobs.length === 1 ? '' : 's'} waiting to be named`}
+            kind="secondary"
+            icon={<Feather name="inbox" size={16} color={t.text} />}
+            onPress={() => router.push('/inbox')}
+          />
         )}
 
         <Button

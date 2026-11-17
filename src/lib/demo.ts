@@ -7,8 +7,8 @@ export const DEMO_KEYS = {
   items: 'demo.items.v1',
   photo_jobs: 'demo.jobs.v1',
   locations: 'demo.locations.v1',
-  recipes: 'demo.recipes.v1',
-  links: 'demo.links.v1',
+  receipts: 'demo.receipts.v1',
+  receipt_items: 'demo.receipt_items.v1',
   categories: 'demo.categories.v1',
 } as const;
 const PHOTO = 'demo.photo.';
@@ -49,6 +49,25 @@ export async function putDemoPhoto(localUri: string) {
     await AsyncStorage.setItem(PHOTO + path, dataUrl);
   } catch {
     throw new Error('Browser storage is full: no room for more photos in demo mode.');
+  }
+  return path;
+}
+
+/** Any file (receipt photo or PDF) as a data: URL in demo mode. */
+export async function putDemoFile(localUri: string) {
+  const blob = await (await fetch(localUri)).blob();
+  if (blob.size > 3_000_000) throw new Error('Demo mode keeps files in this browser: pick one under 3 MB.');
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+  const path = `demo/${newId()}`;
+  try {
+    await AsyncStorage.setItem(PHOTO + path, dataUrl);
+  } catch {
+    throw new Error('Browser storage is full: no room for this file in demo mode.');
   }
   return path;
 }

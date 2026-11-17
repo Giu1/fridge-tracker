@@ -1,4 +1,4 @@
--- Fridge tracker: private shared household (fridge, freezer, emergency supplies, recipes) for exactly two people.
+-- Fridge tracker: private shared household (fridge, freezer, emergency supplies, receipts) for exactly two people.
 -- Run in Supabase: Dashboard > SQL Editor > New query > paste everything > Run.
 -- FIRST edit the two e-mail addresses in step 1.
 -- Safe to run again: it only adds what is missing, so re-run it after updating the app to upgrade an existing project.
@@ -80,15 +80,13 @@ on conflict (id) do nothing;
 create table if not exists public.items (
   id            uuid primary key default gen_random_uuid(),
   name          text not null check (length(name) between 1 and 200),
-  quantity      text,
+  amount        integer not null default 1,
   location      text not null default 'fridge',
   expires_on    date,
   photo_path    text,
   barcode       text,
   brand         text,
   product_name  text,
-  stores        text,
-  nutriscore    text check (nutriscore in ('a','b','c','d','e')),
   nova_group    smallint,
   kcal_100g     numeric,
   off_image_url text,
@@ -98,6 +96,32 @@ create table if not exists public.items (
   updated_at    timestamptz not null default now()
 );
 create index if not exists items_created_idx on public.items (created_at desc);
+
+-- Upgrade: the amount is a whole number now (was free text "quantity"). A plain count ("3", "2 x", "4 un") is kept;
+-- anything else ("500 g", "1 L", "half") becomes 1 and the old text is kept in the item's notes as "Size: ...".
+do $$ begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'items' and column_name = 'quantity') then
+    alter table public.items add column if not exists amount integer;
+    update public.items set
+      amount = coalesce(substring(quantity from '^\s*(\d{1,5})\s*(x|un|unid|unidades|units?|pcs?)?\.?\s*$')::integer, 1),
+      notes  = case
+                 when quantity is null or btrim(quantity) = ''
+                   or quantity ~* '^\s*\d{1,5}\s*(x|un|unid|unidades|units?|pcs?)?\.?\s*$' then notes
+                 else concat_ws(E'\n', nullif(notes, ''), 'Size: ' || btrim(quantity))
+               end;
+    alter table public.items drop column quantity;
+  end if;
+end $$;
+update public.items set amount = 1 where amount is null;
+alter table public.items alter column amount set default 1;
+alter table public.items alter column amount set not null;
+alter table public.items drop constraint if exists items_amount_check;
+alter table public.items add constraint items_amount_check check (amount between 0 and 99999);
+
+-- Upgrade: Nutri-Score and supermarket store names are no longer used.
+alter table public.items drop column if exists nutriscore;
+alter table public.items drop column if exists stores;
 
 -- Upgrade from the first version (fixed fridge/freezer/pantry): pantry becomes Emergency supplies,
 -- and an item's place must be one of the places above (renaming a place keeps its items; a place with items
@@ -169,63 +193,117 @@ update public.photo_jobs set status = 'ready' where status <> 'ready';
 drop function if exists public.claim_photo_job();
 drop table if exists public.product_cache;
 
--- 3b. Saved Cookidoo (Bimby) recipes, ingredients linked to stored items -------------------
-create table if not exists public.recipes (
-  id             uuid primary key default gen_random_uuid(),
-  title          text not null check (length(title) between 1 and 200),
-  url            text check (url is null or (url ~* '^https://' and length(url) <= 2000)),
-  notes          text check (notes is null or length(notes) <= 5000),
-  ingredients    jsonb not null default '[]'::jsonb   -- [{"name":"natas","item_id":"<items.id>"|null}]
-                 check (jsonb_typeof(ingredients) = 'array' and jsonb_array_length(ingredients) <= 60),
-  planned        boolean not null default false,       -- on the menu
-  times_cooked   integer not null default 0 check (times_cooked >= 0),
-  last_cooked_on date,
-  created_by     uuid default auth.uid() references auth.users(id) on delete set null,
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now()
-);
-drop trigger if exists recipes_touch on public.recipes;
-create trigger recipes_touch before update on public.recipes for each row execute function public.touch_updated_at();
+-- 3b. Recipes and supermarket product links were removed from the app: drop their tables.
+-- (This deletes saved recipes and product links. Their Edge Function "fetch-product" can be deleted in the dashboard.)
+drop table if exists public.recipes;
+drop table if exists public.product_links;
 
--- 3c. Product pages of items at each supermarket, with the data read from them (no AI) ----------
--- One link per item per shop. The app reads the page (schema.org data, meta tags, labelled text, then Open Food Facts
--- by EAN) and stores the main fields as columns and everything it found in `data`.
-create table if not exists public.product_links (
+-- 3c. Receipts: the receipt file (photo or PDF) and, once you upload the list you made from it, the draft lines you
+-- check on the bulk edit page before they become items. A receipt with no file is a list imported on its own.
+create table if not exists public.receipts (
   id          uuid primary key default gen_random_uuid(),
-  item_id     uuid not null references public.items(id) on delete cascade,
-  store       text not null check (store in ('continente','pingo-doce','lidl','auchan','intermarche','mercadona','minipreco','aldi','el-corte-ingles')),
-  url         text not null check (url ~* '^https://' and length(url) <= 2000),
-  status      text not null default 'pending' check (status in ('pending','ok','failed')),
-  error       text check (error is null or length(error) <= 1000),
-  name        text,
-  brand       text,
-  ean         text,
-  price       numeric,
-  currency    text,
-  unit_price  text,
-  quantity    text,
-  image_url   text,
-  data        jsonb check (data is null or (jsonb_typeof(data) = 'object' and pg_column_size(data) < 200000)),
-  fetched_at  timestamptz,
+  title       text check (title is null or length(title) <= 200),
+  file_path   text,
+  file_name   text check (file_name is null or length(file_name) <= 200),
+  mime_type   text,
+  size_bytes  integer,
+  status      text not null default 'sent' check (status in ('sent','drafts','done')),
+  item_count  integer not null default 0,
   created_by  uuid default auth.uid() references auth.users(id) on delete set null,
   created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now(),
-  unique (item_id, store)
+  updated_at  timestamptz not null default now()
 );
-create index if not exists product_links_ean_idx on public.product_links (ean);
-drop trigger if exists product_links_touch on public.product_links;
-create trigger product_links_touch before update on public.product_links for each row execute function public.touch_updated_at();
-alter table public.product_links enable row level security;
-drop policy if exists "allowed users manage product links" on public.product_links;
-create policy "allowed users manage product links" on public.product_links
-  for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
-alter table public.product_links replica identity full;
-do $$ begin alter publication supabase_realtime add table public.product_links;
-exception when duplicate_object then null; end $$;
+create index if not exists receipts_created_idx on public.receipts (created_at desc);
+drop trigger if exists receipts_touch on public.receipts;
+create trigger receipts_touch before update on public.receipts for each row execute function public.touch_updated_at();
+
+create table if not exists public.receipt_items (
+  id          uuid primary key default gen_random_uuid(),
+  receipt_id  uuid not null references public.receipts(id) on delete cascade,
+  sort        integer not null default 0,
+  name        text not null check (length(name) between 1 and 200),
+  amount      integer not null default 1 check (amount between 0 and 99999),
+  location    text,
+  category_id text,
+  expires_on  date,
+  notes       text check (notes is null or length(notes) <= 2000),
+  photo_path  text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists receipt_items_receipt_idx on public.receipt_items (receipt_id, sort);
+drop trigger if exists receipt_items_touch on public.receipt_items;
+create trigger receipt_items_touch before update on public.receipt_items for each row execute function public.touch_updated_at();
+
+-- 3d. Photos remembered by name: every photo an item ever had, so a later receipt line with a similar name
+-- ("LEITE MG MIMOSA 1L" ~ "Leite meio gordo Mimosa") can suggest it. Filled automatically from items.
+create extension if not exists pg_trgm with schema extensions;
+create extension if not exists unaccent with schema extensions;
+
+create table if not exists public.name_photos (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (length(name) between 1 and 200),
+  key         text generated always as (lower(btrim(name))) stored,
+  photo_path  text not null,
+  uses        integer not null default 1,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (key, photo_path)
+);
+create index if not exists name_photos_trgm_idx on public.name_photos using gin (key extensions.gin_trgm_ops);
+drop trigger if exists name_photos_touch on public.name_photos;
+create trigger name_photos_touch before update on public.name_photos for each row execute function public.touch_updated_at();
+
+create or replace function public.remember_item_photo() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.photo_path is not null and (tg_op = 'INSERT' or new.photo_path is distinct from old.photo_path or new.name is distinct from old.name) then
+    insert into public.name_photos (name, photo_path) values (new.name, new.photo_path)
+    on conflict (key, photo_path) do update set uses = public.name_photos.uses + 1, name = excluded.name;
+  end if;
+  return new;
+end $$;
+drop trigger if exists items_remember_photo on public.items;
+create trigger items_remember_photo after insert or update of photo_path, name on public.items
+  for each row execute function public.remember_item_photo();
+
+-- Photos items already have.
+insert into public.name_photos (name, photo_path)
+select distinct on (lower(btrim(name)), photo_path) name, photo_path from public.items where photo_path is not null
+on conflict (key, photo_path) do nothing;
+
+-- Fuzzy search: for each name, the best matching remembered photos (one row per photo).
+create or replace function public.match_photos(names text[], per_name integer default 4, min_score real default 0.3)
+returns table (query_index integer, name text, photo_path text, score real)
+language sql stable set search_path = public, extensions as $$
+  select q.i::integer, m.name, m.photo_path, m.score
+  from unnest(names) with ordinality as q(txt, i)
+  cross join lateral (
+    select d.name, d.photo_path, d.score from (
+      select distinct on (np.photo_path) np.name, np.photo_path, np.uses,
+        greatest(
+          similarity(unaccent(np.key), unaccent(lower(q.txt))),
+          word_similarity(unaccent(np.key), unaccent(lower(q.txt))),
+          word_similarity(unaccent(lower(q.txt)), unaccent(np.key))
+        )::real as score
+      from public.name_photos np
+      where public.is_allowed() and length(btrim(q.txt)) >= 2
+      order by np.photo_path, score desc
+    ) d
+    where d.score >= min_score
+    order by d.score desc, d.uses desc
+    limit per_name
+  ) m
+  order by q.i, m.score desc;
+$$;
+revoke all on function public.match_photos(text[], integer, real) from public, anon;
+grant execute on function public.match_photos(text[], integer, real) to authenticated;
 
 -- 4. Row level security: only the two allowed accounts, nothing for anyone else ---------
 alter table public.locations     enable row level security;
-alter table public.recipes       enable row level security;
+alter table public.receipts      enable row level security;
+alter table public.receipt_items enable row level security;
+alter table public.name_photos   enable row level security;
 alter table public.categories    enable row level security;
 alter table public.items         enable row level security;
 alter table public.photo_jobs    enable row level security;
@@ -246,21 +324,32 @@ drop policy if exists "allowed users manage categories" on public.categories;
 create policy "allowed users manage categories" on public.categories
   for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
 
-drop policy if exists "allowed users manage recipes" on public.recipes;
-create policy "allowed users manage recipes" on public.recipes
+drop policy if exists "allowed users manage receipts" on public.receipts;
+create policy "allowed users manage receipts" on public.receipts
+  for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
+
+drop policy if exists "allowed users manage receipt items" on public.receipt_items;
+create policy "allowed users manage receipt items" on public.receipt_items
+  for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
+
+drop policy if exists "allowed users manage name photos" on public.name_photos;
+create policy "allowed users manage name photos" on public.name_photos
   for all to authenticated using (public.is_allowed()) with check (public.is_allowed());
 
 -- 5. Live sync between the phone and the browser ---------------------------------
 alter table public.items replica identity full;
 alter table public.photo_jobs replica identity full;
 alter table public.locations replica identity full;
-alter table public.recipes replica identity full;
+alter table public.receipts replica identity full;
+alter table public.receipt_items replica identity full;
 alter table public.categories replica identity full;
 do $$ begin alter publication supabase_realtime add table public.locations;
 exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.categories;
 exception when duplicate_object then null; end $$;
-do $$ begin alter publication supabase_realtime add table public.recipes;
+do $$ begin alter publication supabase_realtime add table public.receipts;
+exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.receipt_items;
 exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.items;
 exception when duplicate_object then null; end $$;
@@ -282,3 +371,20 @@ create policy "fridge photos write" on storage.objects for insert to authenticat
   with check (bucket_id = 'fridge-photos' and public.is_allowed());
 create policy "fridge photos delete" on storage.objects for delete to authenticated
   using (bucket_id = 'fridge-photos' and public.is_allowed());
+
+-- 7. Private receipt storage (photos and PDFs of receipts, downloadable by both accounts) ------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('receipts', 'receipts', false, 20971520,
+        array['image/jpeg','image/png','image/webp','image/heic','image/heif','application/pdf'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "receipts read"   on storage.objects;
+drop policy if exists "receipts write"  on storage.objects;
+drop policy if exists "receipts delete" on storage.objects;
+create policy "receipts read" on storage.objects for select to authenticated
+  using (bucket_id = 'receipts' and public.is_allowed());
+create policy "receipts write" on storage.objects for insert to authenticated
+  with check (bucket_id = 'receipts' and public.is_allowed());
+create policy "receipts delete" on storage.objects for delete to authenticated
+  using (bucket_id = 'receipts' and public.is_allowed());

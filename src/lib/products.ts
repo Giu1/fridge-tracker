@@ -6,14 +6,12 @@
  */
 import Fuse from 'fuse.js';
 import { localCandidates, upsertProducts } from './localdb';
-import { normaliseStores } from './stores';
-import type { NutriScore, Product } from './types';
+import type { Product } from './types';
 
 const UA = 'FridgeTrackerPersonal/1.0 (personal use app)';
 const FIELDS = [
   'code', 'product_name', 'product_name_pt', 'generic_name_pt', 'brands', 'quantity',
-  'nutriscore_grade', 'nova_group', 'nutriments', 'image_front_small_url', 'image_small_url',
-  'stores', 'stores_tags', 'categories',
+  'nova_group', 'nutriments', 'image_front_small_url', 'image_small_url', 'categories',
 ].join(',');
 
 interface OffProduct {
@@ -23,33 +21,25 @@ interface OffProduct {
   generic_name_pt?: string;
   brands?: string;
   quantity?: string;
-  nutriscore_grade?: string;
   nova_group?: number;
   nutriments?: Record<string, number | string | undefined>;
   image_front_small_url?: string;
   image_small_url?: string;
-  stores?: string;
-  stores_tags?: string[];
   categories?: string;
 }
-
-const GRADES = ['a', 'b', 'c', 'd', 'e'];
 
 export function fromOff(p: OffProduct): Product | null {
   const name = (p.product_name_pt || p.product_name || p.generic_name_pt || '').trim();
   if (!p.code || !name) return null;
-  const grade = (p.nutriscore_grade || '').toLowerCase();
   const kcal = Number(p.nutriments?.['energy-kcal_100g']);
   return {
     code: p.code,
     name,
     brand: p.brands ? p.brands.split(',')[0].trim() : null,
     quantity: p.quantity?.trim() || null,
-    nutriscore: GRADES.includes(grade) ? (grade as NutriScore) : null,
     nova_group: typeof p.nova_group === 'number' ? p.nova_group : null,
     kcal_100g: Number.isFinite(kcal) ? Math.round(kcal) : null,
     image_url: p.image_front_small_url || p.image_small_url || null,
-    stores: normaliseStores([p.stores, ...(p.stores_tags ?? [])]),
     categories: p.categories ?? null,
   };
 }
@@ -83,14 +73,10 @@ export async function lookupBarcode(code: string): Promise<Product | null> {
 
 export interface Suggestion extends Product {
   score: number; // 0 = perfect
-  inStore: boolean;
 }
 
-/**
- * Fuzzy-rank local + remote products for what the user typed.
- * `storeFilter` = supermarket keys the user cares about; matches get boosted, not hidden.
- */
-export function rankSuggestions(query: string, products: (Product & { use_count?: number })[], storeFilter: string[], limit = 25): Suggestion[] {
+/** Fuzzy-rank local + remote products for what the user typed. */
+export function rankSuggestions(query: string, products: (Product & { use_count?: number })[], limit = 25): Suggestion[] {
   const unique = new Map<string, Product & { use_count?: number }>();
   for (const p of products) if (!unique.has(p.code)) unique.set(p.code, p);
   const fuse = new Fuse([...unique.values()], {
@@ -107,17 +93,14 @@ export function rankSuggestions(query: string, products: (Product & { use_count?
   return fuse
     .search(query)
     .map((r) => {
-      const inStore = storeFilter.length === 0 || r.item.stores.some((s) => storeFilter.includes(s));
       let score = r.score ?? 1;
-      if (storeFilter.length && inStore) score -= 0.15; // prefer the chosen supermarkets
-      if (r.item.nutriscore) score -= 0.03; // prefer products with a Nutri-Score
       score -= Math.min(r.item.use_count ?? 0, 5) * 0.03; // prefer things you already buy
-      return { ...r.item, score, inStore };
+      return { ...r.item, score };
     })
     .sort((a, b) => a.score - b.score)
     .slice(0, limit);
 }
 
-export async function localSuggestions(query: string, storeFilter: string[]) {
-  return rankSuggestions(query, await localCandidates(query), storeFilter);
+export async function localSuggestions(query: string) {
+  return rankSuggestions(query, await localCandidates(query));
 }
