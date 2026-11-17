@@ -36,7 +36,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="receipts"
         options={{
-          title: 'Send receipt',
+          title: 'Receipts',
           tabBarIcon: ({ color }) => <Feather name="file-text" size={22} color={color as string} />,
           tabBarBadge: toCheck || undefined,
         }}

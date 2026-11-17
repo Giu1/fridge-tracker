@@ -7,22 +7,26 @@
  */
 import Fuse from 'fuse.js';
 import { Linking, Platform } from 'react-native';
-import { parseDateInput } from './dates';
+import { parseDateInput, toIso } from './dates';
 import { DEMO_KEYS, demoPhotoUrls, putDemoFile, readDemo, removeDemoPhoto, writeDemo } from './demo';
 import { readBytes } from './files';
 import { isoInDays, itemsStore, removePhotoIfUnused } from './items';
 import { isDemo } from './mode';
-import type { ParsedLine } from './receiptList';
+import type { ParsedLine, ReceiptMeta } from './receiptList';
 import { deleteRow, insertRow, insertRows, tableStore, updateRow, useStore } from './store';
 import { supabase } from './supabase';
 import type { Category, Item, Location, PhotoMatch, Place, Receipt, ReceiptLine } from './types';
 
 export const RECEIPT_BUCKET = 'receipts';
 
+/** The day a receipt counts for: the purchase day when known, otherwise the day it was sent (local time). */
+export const receiptDay = (r: Receipt) => r.purchased_on || toIso(new Date(r.created_at));
+
 export const receiptsStore = tableStore<Receipt>({
   table: 'receipts',
   demoKey: DEMO_KEYS.receipts,
-  sort: (a, b) => b.created_at.localeCompare(a.created_at),
+  // Newest purchase first, so the list reads like a timeline.
+  sort: (a, b) => receiptDay(b).localeCompare(receiptDay(a)) || b.created_at.localeCompare(a.created_at),
 });
 
 export const linesStore = tableStore<ReceiptLine>({
@@ -85,6 +89,29 @@ export async function sendReceipt(file: { uri: string; name?: string | null; mim
     });
   } catch (e) {
     if (!isDemo()) await supabase.storage.from(RECEIPT_BUCKET).remove([file_path]);
+    throw e;
+  }
+}
+
+/** A purchase date as written on a list: 2026-11-17, 17/11/2026, 17-11-26, 20261117. Never in the future. */
+export function purchaseDate(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim().slice(0, 10);
+  let m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/);
+  const p = m ? parseDateInput(`${m[3].length === 2 ? `20${m[3]}` : m[3]}-${m[2]}-${m[1]}`) : parseDateInput(s);
+  if (!p || !('iso' in p)) return null;
+  return p.iso <= toIso(new Date()) ? p.iso : null;
+}
+
+/** Save the shop, purchase day and amount paid of a receipt. */
+export async function updateReceiptDetails(r: Receipt, patch: Pick<Receipt, 'shop' | 'purchased_on' | 'total_cents'>) {
+  try {
+    return await updateRow(receiptsStore, r.id, patch);
+  } catch (e) {
+    const msg = (e as Error).message ?? '';
+    if (/purchased_on|total_cents|shop|column/i.test(msg)) {
+      throw new Error('The database needs the latest supabase/schema.sql first (run it again in the Supabase SQL Editor).');
+    }
     throw e;
   }
 }
@@ -191,7 +218,7 @@ const PLACE_WORDS: Record<string, string> = {
 export async function importLines(
   receiptId: string | null,
   parsed: ParsedLine[],
-  ctx: { places: Place[]; categories: Category[]; defaultPlace: Location },
+  ctx: { places: Place[]; categories: Category[]; defaultPlace: Location; meta?: ReceiptMeta },
 ) {
   if (!parsed.length) throw new Error('No products found in that list.');
   const receipt = receiptId
@@ -223,6 +250,16 @@ export async function importLines(
   });
   await insertRows(linesStore, drafts);
   if (receipt.status !== 'drafts') await updateRow(receiptsStore, receipt.id, { status: 'drafts' });
+
+  // Fill in what the list says about the purchase, without overwriting anything typed by hand.
+  const priced = parsed.filter((p) => p.price != null);
+  const total = ctx.meta?.totalCents ?? (priced.length ? priced.reduce((s, p) => s + (p.price ?? 0), 0) : null);
+  const day = purchaseDate(ctx.meta?.date);
+  const details: Partial<Receipt> = {};
+  if (receipt.total_cents == null && total != null) details.total_cents = Math.min(total, 10000000);
+  if (!receipt.purchased_on && day) details.purchased_on = day;
+  if (!receipt.shop && ctx.meta?.shop) details.shop = ctx.meta.shop;
+  if (Object.keys(details).length) await updateRow(receiptsStore, receipt.id, details).catch(() => {}); // schema not upgraded yet
   return receipt.id;
 }
 

@@ -214,6 +214,12 @@ create table if not exists public.receipts (
   updated_at  timestamptz not null default now()
 );
 create index if not exists receipts_created_idx on public.receipts (created_at desc);
+-- What the shopping cost: the day you bought it, the shop and the amount paid (whole cents), typed in by hand or
+-- taken from the uploaded list. Shown month by month on the receipts tab.
+alter table public.receipts add column if not exists purchased_on date;
+alter table public.receipts add column if not exists shop text check (shop is null or length(shop) <= 80);
+alter table public.receipts add column if not exists total_cents integer check (total_cents is null or total_cents between 0 and 10000000);
+create index if not exists receipts_purchased_idx on public.receipts (purchased_on desc);
 drop trigger if exists receipts_touch on public.receipts;
 create trigger receipts_touch before update on public.receipts for each row execute function public.touch_updated_at();
 
