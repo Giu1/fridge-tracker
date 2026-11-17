@@ -213,9 +213,14 @@ export default function Inventory() {
           )
         }
       />
-      <Tap onPress={() => router.push('/add')} style={[styles.fab, { backgroundColor: t.accent }]} accessibilityLabel="Add one item by hand">
-        <Feather name="plus" size={28} color={t.accentText} />
-      </Tap>
+      {/* Sits at the right edge of the content column (not the far window edge on wide screens). */}
+      <View pointerEvents="box-none" style={styles.fabRow}>
+        <View pointerEvents="box-none" style={styles.fabCol}>
+          <Tap onPress={() => router.push('/add')} style={[styles.fab, { backgroundColor: t.accent }]} accessibilityLabel="Add one item by hand">
+            <Feather name="plus" size={28} color={t.accentText} />
+          </Tap>
+        </View>
+      </View>
     </View>
   );
 }
@@ -227,8 +232,10 @@ const styles = StyleSheet.create({
   pill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1 },
   views: { flexDirection: 'row', borderRadius: radius.pill, padding: 3, gap: 2 },
   viewBtn: { width: 34, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  fabRow: { position: 'absolute', left: 0, right: 0, bottom: 16, alignItems: 'center' },
+  fabCol: { width: '100%', maxWidth: 1100, alignItems: 'flex-end', paddingHorizontal: 16 },
   fab: {
-    position: 'absolute', right: 20, bottom: 24, width: 60, height: 60, borderRadius: 30,
+    width: 56, height: 56, borderRadius: 28,
     alignItems: 'center', justifyContent: 'center', elevation: 5,
     shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
   },
