@@ -1,9 +1,10 @@
 import { Feather } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ColorPicker } from '../components/Category';
+import { CategoryIcon, ColorPicker, IconPicker } from '../components/Category';
 import { Button, Card, Field, Label, Page } from '../components/ui';
 import { CATEGORY_COLORS, addCategory, editCategory, moveCategory, removeCategory, textOn, useCategories } from '../lib/categories';
+import { iconFor } from '../lib/categoryIcons';
 import { confirmAsk, notify } from '../lib/dialog';
 import { useItems } from '../lib/items';
 import { radius, useTheme } from '../lib/theme';
@@ -23,7 +24,9 @@ export default function Categories() {
   const unused = CATEGORY_COLORS.find((c) => !categories.some((x) => x.color.toLowerCase() === c.toLowerCase()));
   const [label, setLabel] = useState('');
   const [color, setColor] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ id: string; label: string; color: string } | null>(null);
+  // icon null = not picked yet: follows the name (Meat -> steak, ...).
+  const [icon, setIcon] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string; label: string; color: string; icon: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const newColor = color ?? unused ?? CATEGORY_COLORS[0];
 
@@ -41,9 +44,10 @@ export default function Categories() {
   };
 
   const create = async () => {
-    if (await run(() => addCategory(label, newColor))) {
+    if (await run(() => addCategory(label, newColor, icon))) {
       setLabel('');
       setColor(null);
+      setIcon(null);
     }
   };
 
@@ -57,7 +61,7 @@ export default function Categories() {
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
       <Page style={{ gap: 16 }}>
         <Text style={{ color: t.muted, fontSize: 15 }}>
-          What kind of food it is, shown as a coloured tag on each card. Separate from where it is kept.
+          What kind of food it is, shown as a coloured icon tag on each card. Separate from where it is kept.
         </Text>
 
         {missing && (
@@ -79,6 +83,11 @@ export default function Categories() {
                     <View style={{ flex: 1, gap: 10 }}>
                       <Field value={editing.label} onChangeText={(v) => setEditing({ ...editing, label: v })} autoFocus maxLength={40} />
                       <ColorPicker value={editing.color} onChange={(v) => setEditing({ ...editing, color: v })} colors={CATEGORY_COLORS} />
+                      <IconPicker
+                        value={iconFor({ icon: editing.icon, label: editing.label })}
+                        onChange={(v) => setEditing({ ...editing, icon: v })}
+                        color={editing.color}
+                      />
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <Button title="Cancel" kind="secondary" onPress={() => setEditing(null)} style={{ flex: 1 }} />
                         <Button
@@ -86,7 +95,7 @@ export default function Categories() {
                           busy={busy}
                           style={{ flex: 1 }}
                           onPress={async () => {
-                            if (await run(() => editCategory(c, editing.label, editing.color))) setEditing(null);
+                            if (await run(() => editCategory(c, editing.label, editing.color, editing.icon))) setEditing(null);
                           }}
                         />
                       </View>
@@ -94,9 +103,9 @@ export default function Categories() {
                   ) : (
                     <>
                       <View style={[styles.swatch, { backgroundColor: c.color }]}>
-                        <Text style={{ color: textOn(c.color), fontWeight: '800', fontSize: 15 }}>{c.label.charAt(0).toUpperCase()}</Text>
+                        <CategoryIcon category={c} size={20} color={textOn(c.color)} />
                       </View>
-                      <Pressable style={{ flex: 1 }} onPress={() => setEditing({ id: c.id, label: c.label, color: c.color })}>
+                      <Pressable style={{ flex: 1 }} onPress={() => setEditing({ id: c.id, label: c.label, color: c.color, icon: c.icon ?? null })}>
                         <Text style={{ color: t.text, fontWeight: '700', fontSize: 16 }}>{c.label}</Text>
                         <Text style={{ color: t.muted, fontSize: 13 }}>
                           {n} item{n === 1 ? '' : 's'}
@@ -104,7 +113,7 @@ export default function Categories() {
                       </Pressable>
                       <IconBtn name="arrow-up" label={`Move ${c.label} up`} disabled={i === 0} onPress={() => run(() => moveCategory(c, -1))} />
                       <IconBtn name="arrow-down" label={`Move ${c.label} down`} disabled={i === categories.length - 1} onPress={() => run(() => moveCategory(c, 1))} />
-                      <IconBtn name="edit-2" label={`Edit ${c.label}`} onPress={() => setEditing({ id: c.id, label: c.label, color: c.color })} />
+                      <IconBtn name="edit-2" label={`Edit ${c.label}`} onPress={() => setEditing({ id: c.id, label: c.label, color: c.color, icon: c.icon ?? null })} />
                       <IconBtn name="trash-2" label={`Remove ${c.label}`} onPress={() => remove(c)} />
                     </>
                   )}
@@ -118,6 +127,7 @@ export default function Categories() {
           <Label>New category</Label>
           <Field value={label} onChangeText={setLabel} placeholder="e.g. Cheese, Snacks, Baby food" maxLength={40} onSubmitEditing={create} />
           <ColorPicker value={newColor} onChange={setColor} colors={CATEGORY_COLORS} />
+          <IconPicker value={iconFor({ icon, label })} onChange={setIcon} color={newColor} />
           <Button title="Add category" onPress={create} busy={busy} disabled={!label.trim()} />
         </Card>
       </Page>

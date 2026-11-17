@@ -148,6 +148,8 @@ create table if not exists public.categories (
   created_at timestamptz not null default now()
 );
 create unique index if not exists categories_label_idx on public.categories (lower(label));
+-- Icon shown on the chip and card (a Material Community Icons name, picked in the app).
+alter table public.categories add column if not exists icon text check (icon is null or length(icon) between 1 and 40);
 -- A few to start with, only while there are none (so ones you delete do not come back on a re-run).
 insert into public.categories (id, label, color, sort)
 select * from (values
@@ -162,6 +164,13 @@ select * from (values
 ) v(id, label, color, sort)
 where not exists (select 1 from public.categories)
 on conflict do nothing;
+-- Icons for the starters (only where none was picked yet; others are guessed from the name in the app).
+update public.categories c set icon = v.icon
+from (values
+  ('dairy', 'cheese'), ('meat', 'food-drumstick'), ('fish', 'fish'), ('veg', 'carrot'),
+  ('fruit', 'food-apple'), ('grains', 'baguette'), ('drinks', 'bottle-soda-classic'), ('leftovers', 'food-takeout-box')
+) v(id, icon)
+where c.id = v.id and c.icon is null;
 
 alter table public.items add column if not exists category_id text;
 alter table public.items drop constraint if exists items_category_fkey;

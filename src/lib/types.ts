@@ -16,6 +16,8 @@ export interface Category {
   label: string;
   /** #RRGGBB */
   color: string;
+  /** Material Community Icons name (see src/lib/categoryIcons.ts); null = guessed from the label. */
+  icon?: string | null;
   sort: number;
   created_at: string;
 }
