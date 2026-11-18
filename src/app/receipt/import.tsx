@@ -9,7 +9,8 @@ import { notify } from '../../lib/dialog';
 import { readText } from '../../lib/files';
 import { placeLabel, usePlaces } from '../../lib/places';
 import { AI_PROMPT, parseReceiptList } from '../../lib/receiptList';
-import { importLines, useReceipts } from '../../lib/receipts';
+import { euros } from '../../lib/money';
+import { importLines, purchaseDate, useReceipts } from '../../lib/receipts';
 import { radius, useTheme } from '../../lib/theme';
 
 const EXAMPLE = `[
@@ -30,6 +31,13 @@ export default function ImportList() {
   const [busy, setBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const parsed = useMemo(() => parseReceiptList(text), [text]);
+  const spent = useMemo(() => {
+    const priced = parsed.lines.filter((l) => l.price != null);
+    const total = parsed.meta?.totalCents ?? (priced.length ? priced.reduce((n, l) => n + (l.price ?? 0), 0) : null);
+    const day = purchaseDate(parsed.meta?.date);
+    const parts = [parsed.meta?.shop, day, total != null ? `${euros(total)}${parsed.meta?.totalCents == null ? ' (sum of the lines)' : ''}` : null];
+    return parts.some(Boolean) ? parts.filter(Boolean).join(' · ') : null;
+  }, [parsed]);
   const defaultPlace = byId.has(place) ? place : places[0]?.id ?? 'fridge';
 
   const pickFile = async () => {
@@ -48,7 +56,7 @@ export default function ImportList() {
   const create = async () => {
     setBusy(true);
     try {
-      const id = await importLines(receiptId ?? null, parsed.lines, { places, categories, defaultPlace });
+      const id = await importLines(receiptId ?? null, parsed.lines, { places, categories, defaultPlace, meta: parsed.meta });
       router.replace({ pathname: '/receipt/[id]', params: { id } });
     } catch (e) {
       notify('Could not create the drafts', (e as Error).message);
@@ -97,6 +105,7 @@ export default function ImportList() {
                 </Text>
               ))}
               {parsed.lines.length > 6 && <Text style={{ color: t.muted }}>…and {parsed.lines.length - 6} more</Text>}
+              {spent ? <Text style={{ color: t.accent, fontWeight: '600' }}>{spent}</Text> : null}
               {parsed.skipped.length > 0 && (
                 <Text style={{ color: t.warn }}>
                   {parsed.skipped.length} line{parsed.skipped.length === 1 ? '' : 's'} not understood: {parsed.skipped.slice(0, 3).join(' | ')}

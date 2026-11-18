@@ -5,11 +5,14 @@ for the other. Both see the same food, places and receipts, live.
 
 - **Places.** Fridge, Freezer and Emergency supplies come ready. Add your own (wine rack, garage shelf…), rename,
   reorder or remove them in the app (Settings → Places, or **+ Place** on the Food tab). Changes appear on both devices.
-- **Receipts, no AI in the app.** The **Send receipt** tab stores a photo or PDF of each receipt in a private bucket,
+- **Receipts, no AI in the app.** The **Receipts** tab stores a photo or PDF of each receipt in a private bucket,
   listed and downloadable on both devices. Download it, turn it into a list with whatever AI you like (outside the
   app), then **upload the list** (paste it or pick the file). Every line becomes a draft and opens a **Check the list**
   page where you correct the whole list at once: name, amount, place, category, expiry, photo. Nothing is added until
   you press Save. See [Receipt list format](#receipt-list-format).
+- **What you spend, month by month.** Each receipt has an amount paid, a purchase day and a shop (typed in, or taken
+  from the uploaded list). The Receipts tab reads like a timeline: one section per month with its total, and a summary
+  card with this month's spending, the change from last month and a bar chart of the last six months.
 - **Photos suggested by name.** For each line the app fuzzy-searches the database (Postgres `pg_trgm`, accents ignored)
   for photos that items with a similar name had before ("LEITE MG MIMOSA" finds "Leite meio gordo Mimosa"), and uses an
   exact name match straight away. Lines without a photo can get one later on the item page; every photo an item gets
@@ -107,7 +110,7 @@ npx expo start         # press w for web, or scan the QR with Expo Go on Android
 ```
 
 ## How the receipt flow works
-1. **Send receipt** uploads the photo or PDF (up to 20 MB) to the private `receipts` bucket and adds a `receipts` row.
+1. **Photo of receipt / Photo or PDF file** uploads the photo or PDF (up to 20 MB) to the private `receipts` bucket and adds a `receipts` row.
 2. **Download** gives you the file (a 10-minute signed link). Turn it into a list with any AI; the upload screen has a
    ready-made prompt under "Show the list format".
 3. **Upload its list** parses the text (no AI) into `receipt_items` drafts linked to that receipt, matching place and
@@ -115,6 +118,9 @@ npx expo start         # press w for web, or scan the QR with Expo Go on Android
 4. On that page each line shows photo suggestions from `match_photos` (fuzzy search over `name_photos`). Fix anything,
    then **Save**: the lines become items in one request and the drafts are removed. Both devices see the drafts live, so
    either of you can finish the check.
+5. **Add amount** on a receipt (or the amount itself, to change it) opens a small sheet for the amount paid, the day of
+   purchase and the shop. Without a day, a receipt counts for the day it was sent. If the uploaded list has a `total`
+   (or prices per line, which are added up), a `date` and a `shop`, they fill these in, unless you already typed them.
 
 ## Receipt list format
 Only the name is required. Paste or upload any of these:
@@ -146,6 +152,10 @@ Gelado de baunilha;1;Freezer;;;
 | `expires` | `expires_on`, `expiry`, `validade` | `2026-12-01`, `01/12/2026`, `20261201`, `1/12`… |
 | `expires_in_days` | `days`, `shelf_life_days` | instead of a date |
 | `notes` | `note`, `brand`, `marca` | kept on the item |
+| `price` | `preco`, `valor`, `total` | what the line cost (`5,94`, `5.94`, `5,94 €`); summed into the receipt's amount when the list has no `total` |
+
+In the JSON object form, these keys next to `items` describe the receipt itself: `shop` (`store`, `loja`), `date`
+(`2026-11-17` or `17/11/2026`) and `total` (the amount paid, e.g. `42.37`).
 
 The parser lives in `src/lib/receiptList.ts`.
 
@@ -159,7 +169,7 @@ The parser lives in `src/lib/receiptList.ts`.
 
 ## Project layout
 ```
-src/app/(tabs)/       Food, Add photos, Send receipt tabs
+src/app/(tabs)/       Food, Add photos, Receipts tabs
 src/app/              add / edit item, item details, photo inbox, places, categories, settings (2FA), login
 src/app/receipt/      upload a list (import.tsx), check the list (bulk edit, [id].tsx)
 src/lib/store.ts      local-first sync: device cache → one fetch → realtime patches (shared by all screens)

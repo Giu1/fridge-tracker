@@ -79,8 +79,10 @@ export function DateField({ label, value, onChange, placeholder = 'e.g. 20271212
 const WEEK = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /** Month-grid calendar in a centered sheet. Pure JS, so it behaves the same on web and Android. */
-export function CalendarModal({ visible, value, onClose, onPick }: {
+export function CalendarModal({ visible, value, onClose, onPick, pastOnly }: {
   visible: boolean; value: string | null; onClose: () => void; onPick: (iso: string) => void;
+  /** for days that already happened (a purchase): future days are greyed out and can't be picked */
+  pastOnly?: boolean;
 }) {
   const t = useTheme();
   const todayIso = toIso(startOfToday());
@@ -134,9 +136,9 @@ export function CalendarModal({ visible, value, onClose, onPick }: {
               const iso = isoOf(day);
               const selected = iso === value;
               const isToday = iso === todayIso;
-              const past = iso < todayIso;
+              const past = pastOnly ? iso > todayIso : iso < todayIso;
               return (
-                <Pressable key={i} style={s.cell} onPress={() => { tick(); onPick(iso); }} accessibilityLabel={iso}>
+                <Pressable key={i} style={s.cell} disabled={pastOnly && past} onPress={() => { tick(); onPick(iso); }} accessibilityLabel={iso}>
                   {({ pressed }) => (
                     <View
                       style={[

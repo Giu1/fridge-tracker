@@ -92,6 +92,11 @@ export interface Receipt {
   /** sent = waiting for its list, drafts = list imported and being checked, done = items added */
   status: 'sent' | 'drafts' | 'done';
   item_count: number;
+  /** day of the purchase (YYYY-MM-DD); when empty the day it was sent counts */
+  purchased_on?: string | null;
+  shop?: string | null;
+  /** amount paid, in cents */
+  total_cents?: number | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
