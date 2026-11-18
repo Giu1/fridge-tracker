@@ -1,4 +1,4 @@
-/** Categories: a coloured tag for the kind of food (Dairy, Meat, ...). Created, renamed, recoloured and removed in the app. */
+/** Categories: a coloured tag with an icon for the kind of food (Dairy, Meat, ...). Created, renamed, recoloured and removed in the app. */
 import { useMemo } from 'react';
 import { DEMO_KEYS, readDemo, writeDemo } from './demo';
 import { itemsStore } from './items';
@@ -15,15 +15,15 @@ export const CATEGORY_COLORS = [
 const t0 = '2026-01-01T00:00:00.000Z';
 /** Same starters as supabase/schema.sql; used for demo mode. */
 const STARTERS: Category[] = [
-  ['dairy', 'Dairy', '#0090FF'],
-  ['meat', 'Meat', '#E5484D'],
-  ['fish', 'Fish', '#12A594'],
-  ['veg', 'Vegetables', '#46A758'],
-  ['fruit', 'Fruit', '#F76B15'],
-  ['grains', 'Bread & grains', '#FFC53D'],
-  ['drinks', 'Drinks', '#6E56CF'],
-  ['leftovers', 'Leftovers', '#8D6E63'],
-].map(([id, label, color], sort) => ({ id, label, color, sort, created_at: t0 }));
+  ['dairy', 'Dairy', '#0090FF', 'cheese'],
+  ['meat', 'Meat', '#E5484D', 'food-drumstick'],
+  ['fish', 'Fish', '#12A594', 'fish'],
+  ['veg', 'Vegetables', '#46A758', 'carrot'],
+  ['fruit', 'Fruit', '#F76B15', 'food-apple'],
+  ['grains', 'Bread & grains', '#FFC53D', 'baguette'],
+  ['drinks', 'Drinks', '#6E56CF', 'bottle-soda-classic'],
+  ['leftovers', 'Leftovers', '#8D6E63', 'food-takeout-box'],
+].map(([id, label, color, icon], sort) => ({ id, label, color, icon, sort, created_at: t0 }));
 
 export const categoriesStore = tableStore<Category>({
   table: 'categories',
@@ -53,7 +53,7 @@ export const tint = (hex: string, alpha = 0.16) =>
 
 const friendly = (e: unknown) => {
   const msg = (e as Error)?.message ?? String(e);
-  if (/categor/i.test(msg) && /(does not exist|schema cache|not find)/i.test(msg))
+  if (/categor|'icon'/i.test(msg) && /(does not exist|schema cache|not find)/i.test(msg))
     return new Error('Categories are not set up on the server yet. Run the updated supabase/schema.sql in Supabase (SQL Editor), then try again.');
   if (/duplicate key|categories_label_idx/i.test(msg)) return new Error('A category with that name already exists.');
   return e as Error;
@@ -61,26 +61,27 @@ const friendly = (e: unknown) => {
 
 const cleanLabel = (label: string) => label.trim().replace(/\s+/g, ' ').slice(0, 40);
 
-export async function addCategory(label: string, color: string) {
+/** `icon` null = not picked: the app shows a guess from the name (and the insert still works before the schema upgrade). */
+export async function addCategory(label: string, color: string, icon: string | null) {
   const clean = cleanLabel(label);
   if (!clean) throw new Error('Give the category a name.');
   const rows = categoriesStore.rows();
   if (rows.some((c) => c.label.toLowerCase() === clean.toLowerCase())) throw new Error(`"${clean}" already exists.`);
   const sort = Math.max(-1, ...rows.map((c) => c.sort)) + 1;
   try {
-    return await insertRow(categoriesStore, { label: clean, color, sort });
+    return await insertRow(categoriesStore, { label: clean, color, sort, ...(icon ? { icon } : {}) });
   } catch (e) {
     throw friendly(e);
   }
 }
 
-export async function editCategory(cat: Category, label: string, color: string) {
+export async function editCategory(cat: Category, label: string, color: string, icon: string | null) {
   const clean = cleanLabel(label);
   if (!clean) throw new Error('The name cannot be empty.');
   if (categoriesStore.rows().some((c) => c.id !== cat.id && c.label.toLowerCase() === clean.toLowerCase()))
     throw new Error(`"${clean}" already exists.`);
   try {
-    return await updateRow(categoriesStore, cat.id, { label: clean, color });
+    return await updateRow(categoriesStore, cat.id, { label: clean, color, ...(icon && icon !== cat.icon ? { icon } : {}) });
   } catch (e) {
     throw friendly(e);
   }
